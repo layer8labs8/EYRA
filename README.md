@@ -17,14 +17,7 @@
   <img alt="Tests: 40 passing" src="https://img.shields.io/badge/tests-40%20passing-2EA44F"/>
 </p>
 
-<p align="center">
-  <a href="assets/eyra-promo.mp4"><img src="assets/eyra-promo-preview.gif" alt="EYRA reads the screen as text: preview of the promo video" width="760"/></a><br/>
-
-
 https://github.com/user-attachments/assets/023b3238-3dee-4a1b-b20c-65e0447f14b8
-
-">Watch the full 34-second video (MP4, 2.3 MB)</a></sub>
-</p>
 
 ---
 
