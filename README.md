@@ -88,6 +88,18 @@ EYRA can only see what's on screen. It can't read DOM nodes that aren't rendered
 
 ## Install
 
+### Download (recommended)
+
+1. Download `eyra.exe` from the [latest release](https://github.com/layer8labs8/EYRA/releases/latest). Or take the `.zip`, which also includes `SKILL.md`, the example MCP config and the license.
+2. Put it anywhere, for example `C:\Tools\eyra\eyra.exe`. Nothing else needs to be installed: it runs on a stock Windows 10/11.
+3. Connect it to your agent (see below).
+
+The binary isn't code-signed yet, so Windows SmartScreen may show a warning on first run: choose *More info* → *Run anyway*. You can check the download against the SHA-256 published with the release:
+
+```powershell
+Get-FileHash .\eyra.exe -Algorithm SHA256
+```
+
 ### Build from source
 
 Requirements: Windows 10/11 and a stable Rust toolchain. The repo pins `stable-x86_64-pc-windows-gnu`, which needs MinGW-w64. To use MSVC instead, delete `rust-toolchain.toml`.
