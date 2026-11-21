@@ -11,6 +11,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/layer8labs8/EYRA/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/layer8labs8/EYRA/total?label=downloads&color=2EA44F"/></a>
+  <a href="https://github.com/layer8labs8/EYRA/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/layer8labs8/EYRA?label=release"/></a>
+  <a href="https://github.com/layer8labs8/EYRA/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/layer8labs8/EYRA?style=flat"/></a>
   <img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"/>
   <img alt="Platform: Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6"/>
   <img alt="MCP 2025-06-18" src="https://img.shields.io/badge/MCP-2025--06--18-6E56CF"/>
