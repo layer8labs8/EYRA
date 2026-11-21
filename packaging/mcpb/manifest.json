@@ -1,0 +1,127 @@
+{
+  "manifest_version": "0.3",
+  "name": "eyra",
+  "display_name": "EYRA",
+  "version": "0.3.2",
+  "description": "Eye + Ear + Action for AI agents on Windows: see any app as compact text, hear system audio and the mic, control mouse and keyboard.",
+  "long_description": "EYRA reads any Windows window (Chrome, Edge, File Explorer, Office, Electron apps, games) as a compact numbered map of UI elements using UI Automation with a WinRT OCR fallback, so the agent gets exact text and click targets instead of guessing from screenshots. `see_diff` returns only what changed, usually under 40 tokens per step. EYRA can also record system audio and the microphone (16 kHz WAV with silence trimming) and drive the mouse and keyboard through background UI Automation patterns, with a SendInput fallback.\n\nSafety: password fields are always redacted, password managers are blocked, a read-only mode removes all input tools, moving the mouse to the top-left corner or pressing Ctrl+Alt+Esc stops input, and every call is written to a local audit log. Everything runs locally; nothing is sent anywhere.",
+  "author": {
+    "name": "layer8labs8",
+    "url": "https://github.com/layer8labs8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/layer8labs8/EYRA"
+  },
+  "homepage": "https://github.com/layer8labs8/EYRA",
+  "documentation": "https://github.com/layer8labs8/EYRA#readme",
+  "support": "https://github.com/layer8labs8/EYRA/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "binary",
+    "entry_point": "server/eyra.exe",
+    "mcp_config": {
+      "command": "${__dirname}/server/eyra.exe",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "EYRA_READ_ONLY": "${user_config.read_only}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "list_windows",
+      "description": "List visible desktop windows (hwnd, process, title, rect, flags)."
+    },
+    {
+      "name": "see",
+      "description": "Read a window or screen as compact numbered UI elements (#id role name [x,y,w,h]) using UIA + WinRT OCR fallback. Typically 50-90% fewer tokens than a screenshot and gives exact click coordinates."
+    },
+    {
+      "name": "see_diff",
+      "description": "Like see, but returns only added (+), changed (~), and removed (-) elements since the previous see call."
+    },
+    {
+      "name": "screenshot",
+      "description": "Capture a compact JPEG/PNG of a window (OBS-style, works in background) or screen. Supports diff-only cropping and Set-of-Mark (#id) overlay."
+    },
+    {
+      "name": "wait_change",
+      "description": "Wait until pixels in the target window or screen change above threshold_pct."
+    },
+    {
+      "name": "list_audio_devices",
+      "description": "List active Windows output (loopback) and input (microphone) audio endpoints."
+    },
+    {
+      "name": "listen",
+      "description": "Capture system audio (WASAPI loopback), microphone, or both with silence trimming (VAD) and save compact 16kHz WAV file(s) for multimodal listening."
+    },
+    {
+      "name": "watch_start",
+      "description": "Start a background watch-together session capturing scene-change keyframes (.jpg) and VAD-trimmed system/mic audio clips (.wav) in an auto-pruning ring buffer."
+    },
+    {
+      "name": "watch_poll",
+      "description": "Return new timeline events (scene keyframes + audio clips with file paths) from the active watch session."
+    },
+    {
+      "name": "watch_stop",
+      "description": "Stop the active watch session and delete temporary clips/keyframes unless keep_files=true."
+    },
+    {
+      "name": "click",
+      "description": "Click an element by #id (tries background UIA first) or screen coordinates (x, y)."
+    },
+    {
+      "name": "type_text",
+      "description": "Type Unicode text into an element (#id) or focused input. Supports background UIA SetValue."
+    },
+    {
+      "name": "hotkey",
+      "description": "Send a keyboard shortcut (e.g. 'ctrl+c', 'alt+tab', 'enter', 'f5')."
+    },
+    {
+      "name": "scroll",
+      "description": "Scroll vertically (delta_y: positive up, negative down) or horizontally (delta_x)."
+    },
+    {
+      "name": "drag",
+      "description": "Drag mouse with left button held from (x1, y1) to (x2, y2)."
+    },
+    {
+      "name": "focus_window",
+      "description": "Restore and focus a window by hwnd, title substring, or process name; optionally lock it as default target."
+    }
+  ],
+  "tools_generated": false,
+  "keywords": [
+    "windows",
+    "desktop",
+    "automation",
+    "ui-automation",
+    "computer-use",
+    "ocr",
+    "screen-reader",
+    "audio",
+    "accessibility",
+    "rust"
+  ],
+  "license": "Apache-2.0",
+  "compatibility": {
+    "platforms": [
+      "win32"
+    ]
+  },
+  "user_config": {
+    "read_only": {
+      "type": "boolean",
+      "title": "Read-only mode",
+      "description": "Only look and listen: removes the mouse and keyboard tools (click, type_text, hotkey, scroll, drag, focus_window).",
+      "default": false,
+      "required": false
+    }
+  }
+}

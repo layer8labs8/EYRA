@@ -93,7 +93,16 @@ EYRA can only see what's on screen. It can't read DOM nodes that aren't rendered
 
 ## Install
 
-### Download (recommended)
+### One-click install
+
+| Agent | How |
+|---|---|
+| **Claude Desktop** | Download `eyra-<version>.mcpb` from the [latest release](https://github.com/layer8labs8/EYRA/releases/latest) and open it (double-click, or drag it into *Settings → Extensions*). A *Read-only mode* switch is available in the extension's settings. |
+| **Gemini CLI** | `gemini extensions install https://github.com/layer8labs8/EYRA` |
+
+Both packages contain the same standalone `eyra.exe`; nothing else is installed.
+
+### Download
 
 1. Download `eyra.exe` from the [latest release](https://github.com/layer8labs8/EYRA/releases/latest). Or take the `.zip`, which also includes `SKILL.md`, the example MCP config and the license.
 2. Put it anywhere, for example `C:\Tools\eyra\eyra.exe`. Nothing else needs to be installed: it runs on a stock Windows 10/11.
@@ -115,6 +124,12 @@ cargo build --release
 cargo test --release
 ```
 
+To build every release asset (exe, zip, Claude `.mcpb`, Gemini extension archive, checksums) into `dist\`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1
+```
+
 ### Connect it to an agent
 
 EYRA speaks standard MCP over stdio, so the setup is the same everywhere: point the host at `eyra.exe mcp`.
@@ -122,9 +137,9 @@ EYRA speaks standard MCP over stdio, so the setup is the same everywhere: point 
 | Host | Where to add it |
 |---|---|
 | **Gemini – Antigravity** | MCP servers → *Manage* → *View raw config* (`mcp_config.json`), add the JSON below |
-| **Gemini CLI** | `%USERPROFILE%\.gemini\settings.json`, add the JSON below |
+| **Gemini CLI** | `gemini extensions install https://github.com/layer8labs8/EYRA`, or `%USERPROFILE%\.gemini\settings.json` with the JSON below |
 | **Claude Code** | `claude mcp add eyra -- C:\path\to\eyra.exe mcp` |
-| **Claude Desktop** | `claude_desktop_config.json`, add the JSON below |
+| **Claude Desktop** | open the `.mcpb` from the release, or `claude_desktop_config.json` with the JSON below |
 | **Cursor / VS Code / others** | the host's MCP config file, add the JSON below |
 
 See [`mcp-config.example.json`](mcp-config.example.json):

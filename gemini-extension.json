@@ -1,0 +1,13 @@
+{
+  "name": "eyra",
+  "version": "0.3.2",
+  "description": "Eye + Ear + Action for Windows: see any app as compact text (UI Automation + OCR), hear system audio and the mic, and control mouse and keyboard.",
+  "mcpServers": {
+    "eyra": {
+      "command": "${extensionPath}${/}eyra.exe",
+      "args": ["mcp"],
+      "cwd": "${extensionPath}"
+    }
+  },
+  "contextFileName": "GEMINI.md"
+}
