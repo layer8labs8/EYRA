@@ -40,7 +40,7 @@ WIN hwnd=0x3C051E proc=chrome.exe title="New repository - Google Chrome" mode=ui
 
 ## Measured performance
 
-All numbers come from a real Windows 10 machine at 1366×768, measured with `eyra bench` and the MCP server. They are not estimates.
+Measured on Windows 10 at 1366×768 with `eyra bench` and the MCP server.
 
 ### Latency of `see` (one window)
 
@@ -51,9 +51,7 @@ All numbers come from a real Windows 10 machine at 1366×768, measured with `eyr
 | CLI, one-shot process | ~45 ms | ~65 ms |
 | OCR mode (`mode="ocr"`) | ~80 ms | ~80 ms |
 
-File Explorer on a large folder (System32) is the slowest provider tested: ~195 ms (0.1.0: ~430 ms). Almost all of that time is spent inside Explorer's own UI Automation provider. A minimized window returns immediately with a note to restore it first.
-
-The whole on-screen control tree is fetched in **one cross-process UI Automation call** (cached subtree with an off-screen filter), instead of a dozen calls per element.
+File Explorer showing a very large folder is the slowest case tested: ~195 ms.
 
 ### Tokens per observation
 
@@ -65,10 +63,8 @@ Each window is compared with one screenshot of the same window (image tokens = w
 | Electron desktop app, 1366×728 (~1,326) | ~675 | ~603 | **~528 (−60%)** | **~28 (−98%)** |
 | Windows desktop / Explorer, 1366×768 (~1,399) | ~294 | ~294 | **~250 (−82%)** | **~31 (−98%)** |
 
-Field report from a live session with Gemini in Antigravity: open Chrome, type `youtube.com`, open a video with a background UIA click (the mouse never moved), spot and press the ad's *Skip* button through `see_diff` (33–36 ms per step), then `listen` 8 s of the video's audio (~256 audio tokens) and understand the speech without subtitles.
-
 **How to read this:**
-- The first look at a very dense web page costs about as much as a screenshot. It still gives exact `#id`s and coordinates instead of pixels to guess. On the same GitHub page, 0.1.0 needed ~1,740 tokens and the lean mode needs ~900 (−48%).
+- The first look at a very dense web page costs about as much as a screenshot, but it gives exact `#id`s and coordinates instead of pixels to guess.
 - The big savings come from the steps after that. A 20-step task that observes with `see_diff` costs about 900 + 19×40 ≈ **1.7k tokens instead of about 19–26k** with screenshots.
 
 Run it on your own machine:
@@ -173,13 +169,7 @@ The server negotiates MCP revisions `2025-06-18`, `2025-03-26` and `2024-11-05`.
 
 With `coords="center"` the position is printed as the click point only (`#12 btn "Save" (disabled) @885,626`), which is the cheapest format.
 
-`#id`s come from the **most recent `see`/`see_diff`** of that window, so call `see_diff` again after the UI changes. To save tokens, eyra leaves out:
-- hyperlink URLs
-- labels that only repeat their parent control (e.g. `txt "Save"` inside `btn "Save"`)
-- list rows that only wrap a same-named link
-- unnamed nested documents
-
-Open popup menus (File/Edit menus, context menus) are included in the window's map, so `click` on a menu followed by `see_diff` shows exactly the menu items that appeared.
+`#id`s come from the **most recent `see`/`see_diff`** of that window, so call `see_diff` again after the UI changes. Open popup menus (File/Edit menus, context menus) are part of the window's map.
 
 ## CLI
 
@@ -219,7 +209,7 @@ eyra serve --port 47821    # optional 127.0.0.1 HTTP bridge (token-authenticated
 
 | Symptom | Cause and fix |
 |---|---|
-| First `see` of a freshly started Chrome/Electron window shows only the tabs and toolbar | Chromium builds the web-page accessibility tree on first use. When a `Chrome_WidgetWin_*` window exposes no document, eyra sends it a screen-reader-style accessibility request and re-scans for up to 2 s. Measured on a cold Chrome: the first call returns the full page (119 elements, ~0.45 s) instead of the toolbar only (16). |
+| `see` says the window is minimized | Restore it first with `focus_window`. |
 | `see` returns nearly nothing for a game, canvas or remote desktop | There is no UIA tree there. Use `mode="ocr"`; `auto` already falls back to OCR below 5 elements. |
 | OCR misses your language | Run `eyra ocr-langs`, then install the language's OCR pack in Windows Settings → Time & Language → Language, and pass `ocr_lang`. |
 | Clicks or typing do nothing in an admin window | Windows UIPI blocks input to elevated windows from a non-elevated process. Run eyra elevated, or the target app non-elevated. |
@@ -231,9 +221,7 @@ eyra serve --port 47821    # optional 127.0.0.1 HTTP bridge (token-authenticated
 |---|---|
 | `EYRA_LOG_FILE` / `EYRA_NO_LOG` | Audit log path / disable logging |
 | `EYRA_READ_ONLY` | Forces read-only mode |
-| `EYRA_UIA_WALKER=1` | Uses the element-by-element tree walker instead of the single-call subtree fetch (diagnostics) |
-| `EYRA_OCR_SCALE=2` | Upscales frames before OCR (slower; occasionally helps very small text) |
-| `EYRA_DEBUG=1` | Prints the Chromium warm-up progress to stderr |
+| `EYRA_OCR_SCALE=2` | Upscales frames before OCR (slower; can help with very small text) |
 
 ## Architecture
 
