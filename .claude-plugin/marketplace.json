@@ -1,0 +1,15 @@
+{
+  "name": "eyra",
+  "description": "EYRA: Eye + Ear + Action for AI agents on Windows.",
+  "owner": {
+    "name": "layer8labs8",
+    "url": "https://github.com/layer8labs8"
+  },
+  "plugins": [
+    {
+      "name": "eyra",
+      "source": "./claude-plugin",
+      "description": "Eye + Ear + Action for Windows: see any app as compact text (UI Automation + OCR), hear system audio and the mic, and control mouse and keyboard."
+    }
+  ]
+}

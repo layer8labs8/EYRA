@@ -7,3 +7,4 @@
 !assets/*.svg
 eyra_screenshot.*
 /dist
+!claude-plugin/.claude-plugin/icon.png

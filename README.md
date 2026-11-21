@@ -99,8 +99,9 @@ EYRA can only see what's on screen. It can't read DOM nodes that aren't rendered
 |---|---|
 | **Claude Desktop** | Download `eyra-<version>.mcpb` from the [latest release](https://github.com/layer8labs8/EYRA/releases/latest) and open it (double-click, or drag it into *Settings → Extensions*). A *Read-only mode* switch is available in the extension's settings. |
 | **Gemini CLI** | `gemini extensions install https://github.com/layer8labs8/EYRA` |
+| **Claude Code** | `/plugin install eyra --marketplace layer8labs8/EYRA` |
 
-Both packages contain the same standalone `eyra.exe`; nothing else is installed.
+All packages contain the same standalone `eyra.exe`; nothing else is installed.
 
 ### Download
 

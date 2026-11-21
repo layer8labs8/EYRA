@@ -1,0 +1,44 @@
+{
+  "name": "eyra",
+  "displayName": "EYRA",
+  "version": "0.3.2",
+  "description": "Eye + Ear + Action for Windows: see any app as compact text (UI Automation + OCR), hear system audio and the mic, and control mouse and keyboard.",
+  "author": {
+    "name": "layer8labs8",
+    "url": "https://github.com/layer8labs8"
+  },
+  "homepage": "https://github.com/layer8labs8/EYRA",
+  "repository": "https://github.com/layer8labs8/EYRA",
+  "license": "Apache-2.0",
+  "keywords": [
+    "windows",
+    "desktop-automation",
+    "ui-automation",
+    "computer-use",
+    "ocr",
+    "accessibility",
+    "audio"
+  ],
+  "mcpServers": {
+    "eyra": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/eyra.exe",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "EYRA_READ_ONLY": "${user_config.read_only}"
+      }
+    }
+  },
+  "userConfig": {
+    "read_only": {
+      "type": "boolean",
+      "title": "Read-only mode",
+      "description": "Only look and listen: removes the mouse and keyboard tools (click, type_text, hotkey, scroll, drag, focus_window).",
+      "default": false
+    }
+  },
+  "network": {
+    "hosts": []
+  }
+}
