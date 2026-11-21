@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "eyra": {
+      "command": "C:\path\to\eyra.exe",
+      "args": ["mcp"]
+    }
+  }
+}

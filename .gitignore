@@ -1,0 +1,8 @@
+/target
+*.jpg
+*.jpeg
+*.png
+!assets/*.jpg
+!assets/*.png
+!assets/*.svg
+eyra_screenshot.*

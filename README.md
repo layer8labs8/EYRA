@@ -1,0 +1,253 @@
+<p align="center">
+  <img src="assets/eyra-banner.jpg" alt="EYRA — Eye + Ear + Action" width="760"/>
+</p>
+
+<h1 align="center">EYRA</h1>
+<p align="center">
+  <strong>Eye + Ear + Action</strong> for AI agents on Windows.<br/>
+  One ~1.9 MB pure-Rust binary that is an <strong>MCP server</strong>, an <strong>agent skill</strong> and a <strong>CLI</strong>.<br/>
+  It sees any window as compact text, hears system audio and the microphone, and drives the mouse and keyboard.<br/>
+  Works with any MCP-capable agent: <strong>Gemini</strong> (Antigravity, Gemini CLI), <strong>Claude</strong> (Claude Code, Claude Desktop), <strong>Cursor</strong>, VS Code and others.
+</p>
+
+<p align="center">
+  <img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"/>
+  <img alt="Platform: Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6"/>
+  <img alt="MCP 2025-06-18" src="https://img.shields.io/badge/MCP-2025--06--18-6E56CF"/>
+  <img alt="Tests: 40 passing" src="https://img.shields.io/badge/tests-40%20passing-2EA44F"/>
+</p>
+
+---
+
+## Why EYRA?
+
+Most computer-use agents send a full screenshot on every step and then guess pixel coordinates. EYRA reads what Windows already knows about the screen. Example `see` output (abridged):
+
+```text
+WIN hwnd=0x3C051E proc=chrome.exe title="New repository - Google Chrome" mode=uia ms=22
+#15 inp "Address and search bar" val="github.com/new" [158,46,1060,34]
+#49 cmb "Owner" val="octocat" [325,333,150,32]
+#51 inp "Repository name *" (focused) [496,333,530,32]
+#68 chk "Add README" (unchecked) [978,682,42,24]
+```
+
+- **Exact, not guessed.** The text and coordinates come from the OS accessibility tree, so the agent doesn't have to estimate them from pixels. `click(id=51)` hits the right control.
+- **Fewer tokens.** A text map of the UI is cheaper than a screenshot. `see_diff` returns only what changed, typically **under 40 tokens per step**.
+- **Not just the web: the whole Windows desktop.** Any browser (Chrome, Edge, Firefox, Brave; including logged-in tabs), File Explorer, Office, Settings, Notepad, Electron apps (VS Code, Discord, Slack, Telegram), canvases, games and video (through OCR). No browser extension, per-site API or cloud service.
+- **Model-agnostic.** It is a standard MCP server, so the same binary serves Gemini, Claude, GPT-based hosts or your own agent. Models that accept audio input (for example Gemini) can listen to the WAV clips that `listen` / `watch` produce. Text-only models still get Eye + Action.
+- **Zero runtime dependencies.** No Python, FFmpeg, Whisper or API keys. Only Windows APIs: UI Automation, WinRT OCR, WASAPI and SendInput.
+- **Safe by default.** Password values are masked, password managers are blocked, there's a `--read-only` mode, a failsafe corner, a kill-switch hotkey and an audit log.
+
+## Measured performance
+
+All numbers come from a real Windows 10 machine at 1366×768, measured with `eyra bench` and the MCP server. They are not estimates.
+
+### Latency of `see` (one window)
+
+| Mode | Chrome (GitHub page, ~100 elements) | Electron desktop app |
+|---|---|---|
+| MCP server, warm (`see`) | **22 ms** | ~25 ms |
+| MCP server, warm (`see_diff`) | **23 ms** | ~25 ms |
+| CLI, one-shot process | ~45 ms | ~65 ms |
+| OCR mode (`mode="ocr"`) | ~80 ms | ~80 ms |
+
+File Explorer on a large folder (System32) is the slowest provider tested: ~195 ms (0.1.0: ~430 ms). Almost all of that time is spent inside Explorer's own UI Automation provider. A minimized window returns immediately with a note to restore it first.
+
+The whole on-screen control tree is fetched in **one cross-process UI Automation call** (cached subtree with an off-screen filter), instead of a dozen calls per element.
+
+### Tokens per observation
+
+Each window is compared with one screenshot of the same window (image tokens = w·h/750). Text tokens are estimated as chars/4.
+
+| Window (screenshot cost) | `see` | `interactive_only` | `interactive_only` + `coords="center"` | `see_diff` (no change) |
+|---|---|---|---|---|
+| Chrome, dense GitHub repo page, 1036×701 (~969) | ~1,137 | ~1,065 | **~901 (−7%)** | **~42 (−96%)** |
+| Electron desktop app, 1366×728 (~1,326) | ~675 | ~603 | **~528 (−60%)** | **~28 (−98%)** |
+| Windows desktop / Explorer, 1366×768 (~1,399) | ~294 | ~294 | **~250 (−82%)** | **~31 (−98%)** |
+
+Field report from a live session with Gemini in Antigravity: open Chrome, type `youtube.com`, open a video with a background UIA click (the mouse never moved), spot and press the ad's *Skip* button through `see_diff` (33–36 ms per step), then `listen` 8 s of the video's audio (~256 audio tokens) and understand the speech without subtitles.
+
+**How to read this:**
+- The first look at a very dense web page costs about as much as a screenshot. It still gives exact `#id`s and coordinates instead of pixels to guess. On the same GitHub page, 0.1.0 needed ~1,740 tokens and the lean mode needs ~900 (−48%).
+- The big savings come from the steps after that. A 20-step task that observes with `see_diff` costs about 900 + 19×40 ≈ **1.7k tokens instead of about 19–26k** with screenshots.
+
+Run it on your own machine:
+
+```powershell
+eyra bench --window Chrome
+```
+
+## When to use EYRA (and when not)
+
+| Task | Best tool |
+|---|---|
+| Native Windows apps (Explorer, Office, Settings, Telegram, WinForms/WPF/UWP) | **EYRA** |
+| Electron apps (VS Code, Slack, Discord, Teams) | **EYRA** |
+| Repeatedly watching the same window for changes | **EYRA** `see_diff` / `wait_change` |
+| Canvas, games, remote desktop, video | **EYRA** `see(mode="ocr")` / `screenshot(diff_only)` |
+| Hearing system audio or the microphone (for audio-capable models) | **EYRA** `listen` / `watch_*` |
+| Deep web automation: hidden DOM, network, console, JS | A browser-extension tool (DOM access beats OS-level access here) |
+
+EYRA can only see what's on screen. It can't read DOM nodes that aren't rendered, network traffic or a page's JavaScript state.
+
+## Install
+
+### Build from source
+
+Requirements: Windows 10/11 and a stable Rust toolchain. The repo pins `stable-x86_64-pc-windows-gnu`, which needs MinGW-w64. To use MSVC instead, delete `rust-toolchain.toml`.
+
+```powershell
+cargo build --release
+# -> target\release\eyra.exe (~1.9 MB, no DLLs needed)
+cargo test --release
+```
+
+### Connect it to an agent
+
+EYRA speaks standard MCP over stdio, so the setup is the same everywhere: point the host at `eyra.exe mcp`.
+
+| Host | Where to add it |
+|---|---|
+| **Gemini – Antigravity** | MCP servers → *Manage* → *View raw config* (`mcp_config.json`), add the JSON below |
+| **Gemini CLI** | `%USERPROFILE%\.gemini\settings.json`, add the JSON below |
+| **Claude Code** | `claude mcp add eyra -- C:\path\to\eyra.exe mcp` |
+| **Claude Desktop** | `claude_desktop_config.json`, add the JSON below |
+| **Cursor / VS Code / others** | the host's MCP config file, add the JSON below |
+
+See [`mcp-config.example.json`](mcp-config.example.json):
+
+```json
+{
+  "mcpServers": {
+    "eyra": { "command": "C:\\path\\to\\eyra.exe", "args": ["mcp"] }
+  }
+}
+```
+
+Use `"args": ["mcp", "--read-only"]` to expose only the Eye, Ear and Watch tools, with no mouse or keyboard.
+
+The server negotiates MCP revisions `2025-06-18`, `2025-03-26` and `2024-11-05`. It sends usage `instructions` on `initialize` and marks every tool with `readOnlyHint`/`destructiveHint` annotations, so hosts can auto-approve observation tools and ask before input actions.
+
+**Agent skill.** [`SKILL.md`](SKILL.md) teaches an agent the lowest-token workflow.
+
+## MCP tools (16)
+
+### Eye
+
+| Tool | What it does | Key arguments |
+|---|---|---|
+| `list_windows` | Visible windows: hwnd, process, title, rect, flags | — |
+| `see` | Numbered UI element map (UIA, OCR fallback); includes open popup menus | `window`, `mode` = auto/uia/ocr/both, `interactive_only`, `coords` = rect/center, `max_elements`, `ocr_lang` |
+| `see_diff` | Only `+` added, `~` changed and `-` removed elements since the last `see` of **that window** | same as `see` |
+| `screenshot` | Compact JPEG/PNG, including occluded windows | `window`, `crop`, `max_width`, `quality`, `diff_only`, `som` |
+| `wait_change` | Blocks until the pixels change (page load, animation end) | `window`, `timeout_ms`, `threshold_pct` |
+
+### Ear and Watch
+
+| Tool | What it does | Key arguments |
+|---|---|---|
+| `list_audio_devices` | Output (loopback) and input endpoints | — |
+| `listen` | Records system audio, the mic, or both, trims silence, saves a 16 kHz WAV | `seconds`, `source`, `trim_silence` |
+| `watch_start` / `watch_poll` / `watch_stop` | Rolling timeline of scene-change keyframes and audio clips | `window`, `audio`, `chunk_sec`, `scene_threshold_pct` |
+
+### Action (disabled in `--read-only`)
+
+| Tool | What it does | Key arguments |
+|---|---|---|
+| `click` | Clicks by `#id` (background UIA Invoke/Toggle/Select first) or by `x,y` | `id`, `x`, `y`, `button`, `clicks`, `background` |
+| `type_text` | Types Unicode text (background UIA `SetValue` first) | `text`, `id`, `clear`, `press_enter` |
+| `hotkey` | Sends a keyboard shortcut such as `ctrl+l` or `alt+tab` | `keys`, `window` |
+| `scroll` / `drag` | Scrolls the mouse wheel or drags with the left button | `delta_y`, `delta_x` / `x1,y1,x2,y2` |
+| `focus_window` | Restores, focuses and optionally locks a default target window | `window`, `lock` |
+
+### Reading the element map
+
+```text
+#12 btn "Save" (disabled) [840,610,90,32]
+ │   │    │       │          └ x,y,width,height in screen pixels
+ │   │    │       └ state: focused, disabled, checked, unchecked, mixed, selected
+ │   │    └ accessible name (val="…" follows when an input has a value)
+ │   └ role: btn inp lnk chk rad cmb tab mnu itm sld hdr txt img doc pwd ocr el
+ └ id: pass it to click / type_text
+```
+
+With `coords="center"` the position is printed as the click point only (`#12 btn "Save" (disabled) @885,626`), which is the cheapest format.
+
+`#id`s come from the **most recent `see`/`see_diff`** of that window, so call `see_diff` again after the UI changes. To save tokens, eyra leaves out:
+- hyperlink URLs
+- labels that only repeat their parent control (e.g. `txt "Save"` inside `btn "Save"`)
+- list rows that only wrap a same-named link
+- unnamed nested documents
+
+Open popup menus (File/Edit menus, context menus) are included in the window's map, so `click` on a menu followed by `see_diff` shows exactly the menu items that appeared.
+
+## CLI
+
+```powershell
+eyra windows
+eyra see --window Chrome --interactive-only --coords center
+eyra diff --window Chrome
+eyra screenshot --window Chrome --som --out som.jpg
+eyra click --id 5
+eyra type "hello world" --id 2 --enter
+eyra hotkey ctrl+l
+eyra wait-change --window Chrome
+eyra audio-devices
+eyra listen --seconds 8 --source both
+eyra watch --window Chrome --duration 60
+eyra ocr-langs
+eyra logs --tail 25
+eyra bench --window Chrome
+eyra serve --port 47821    # optional 127.0.0.1 HTTP bridge (token-authenticated)
+```
+
+`--window` accepts an hwnd (`0x3C051E`), a title substring, a process name or `screen`. Add `--json` for machine-readable output.
+
+## Safety
+
+| Guard | Behaviour |
+|---|---|
+| Password fields | Values are always shown as `[REDACTED]` and blacked out in screenshots and before OCR |
+| Sensitive windows | 1Password, KeePass, Bitwarden and Windows Security can't be read or controlled unless you pass `--allow-sensitive` |
+| `--read-only` | Removes all input tools from the MCP tool list and rejects them in the CLI and bridge |
+| Corner failsafe | Moving the mouse to the top-left corner `(0,0)` halts input actions |
+| Kill switch | `Ctrl+Alt+Esc` latches an emergency stop until eyra restarts |
+| Dangerous hotkeys | `ctrl+alt+delete` and `win+l` are blocked, and so is `alt+f4` on the Windows shell |
+| Audit log | JSONL at `%LOCALAPPDATA%\eyra\audit.jsonl`: every call with its timing and token estimate. Text typed into password fields is redacted. Rotates at 10 MB |
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| First `see` of a freshly started Chrome/Electron window shows only the tabs and toolbar | Chromium builds the web-page accessibility tree on first use. When a `Chrome_WidgetWin_*` window exposes no document, eyra sends it a screen-reader-style accessibility request and re-scans for up to 2 s. Measured on a cold Chrome: the first call returns the full page (119 elements, ~0.45 s) instead of the toolbar only (16). |
+| `see` returns nearly nothing for a game, canvas or remote desktop | There is no UIA tree there. Use `mode="ocr"`; `auto` already falls back to OCR below 5 elements. |
+| OCR misses your language | Run `eyra ocr-langs`, then install the language's OCR pack in Windows Settings → Time & Language → Language, and pass `ocr_lang`. |
+| Clicks or typing do nothing in an admin window | Windows UIPI blocks input to elevated windows from a non-elevated process. Run eyra elevated, or the target app non-elevated. |
+| Coordinates are off on a multi-monitor or 150% DPI setup | eyra is per-monitor DPI aware and coordinates are physical pixels. Use `#id` clicks rather than hand-computed points. |
+
+### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `EYRA_LOG_FILE` / `EYRA_NO_LOG` | Audit log path / disable logging |
+| `EYRA_READ_ONLY` | Forces read-only mode |
+| `EYRA_UIA_WALKER=1` | Uses the element-by-element tree walker instead of the single-call subtree fetch (diagnostics) |
+| `EYRA_OCR_SCALE=2` | Upscales frames before OCR (slower; occasionally helps very small text) |
+| `EYRA_DEBUG=1` | Prints the Chromium warm-up progress to stderr |
+
+## Architecture
+
+```text
+src/
+├─ eye/     uia.rs (cached UIA subtree scan) · ocr.rs (WinRT OCR) · capture.rs (PrintWindow/BitBlt)
+│           diff.rs (element and pixel diff) · som.rs (Set-of-Mark badges) · windows.rs
+├─ ear/     wasapi.rs (loopback + mic) · vad.rs (resample + energy VAD) · wav.rs
+├─ hand.rs  UIA patterns → SendInput fallback
+├─ watch.rs ring-buffered video and audio timeline
+├─ mcp.rs   stdio JSON-RPC server   ├─ bridge.rs  local HTTP bridge
+├─ safety.rs · audit.rs · state.rs  └─ cli.rs
+```
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
