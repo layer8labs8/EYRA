@@ -19,7 +19,11 @@
 
 <p align="center">
   <a href="assets/eyra-promo.mp4"><img src="assets/eyra-promo-preview.gif" alt="EYRA reads the screen as text: preview of the promo video" width="760"/></a><br/>
-  <sub>▶ <a href="assets/eyra-promo.mp4">Watch the full 34-second video (MP4, 2.3 MB)</a></sub>
+
+
+https://github.com/user-attachments/assets/023b3238-3dee-4a1b-b20c-65e0447f14b8
+
+">Watch the full 34-second video (MP4, 2.3 MB)</a></sub>
 </p>
 
 ---
