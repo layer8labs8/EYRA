@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "eyra",
   "display_name": "EYRA",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "Eye + Ear + Action for AI agents on Windows: see any app as compact text, hear system audio and the mic, control mouse and keyboard.",
   "long_description": "EYRA reads any Windows window (Chrome, Edge, File Explorer, Office, Electron apps, games) as a compact numbered map of UI elements using UI Automation with a WinRT OCR fallback, so the agent gets exact text and click targets instead of guessing from screenshots. `see_diff` returns only what changed, usually under 40 tokens per step. EYRA can also record system audio and the microphone (16 kHz WAV with silence trimming) and drive the mouse and keyboard through background UI Automation patterns, with a SendInput fallback.\n\nSafety: password fields are always redacted, password managers are blocked, a read-only mode removes all input tools, moving the mouse to the top-left corner or pressing Ctrl+Alt+Esc stops input, and every call is written to a local audit log. Everything runs locally; nothing is sent anywhere.",
   "author": {
