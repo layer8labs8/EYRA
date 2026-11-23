@@ -237,7 +237,7 @@ pub fn tool_definitions(read_only: bool) -> Vec<Value> {
         }),
         json!({
             "name": "listen",
-            "description": "Capture system audio (WASAPI loopback), microphone, or both with silence trimming (VAD) and save compact 16kHz WAV file(s) for multimodal listening.",
+            "description": "Capture system audio (WASAPI loopback), microphone, or both with silence trimming (VAD) and save compact 16kHz WAV file(s) for multimodal listening. The microphone is only available when the user started eyra with --allow-mic; otherwise use source=system.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

@@ -2,6 +2,27 @@
 
 ## Unreleased (next: 0.4.0)
 
+### Security
+- **Confirmation for risky actions (on by default):** clicks on delete / send / pay / publish-style
+  controls (8 languages) and `shift+delete`, `ctrl+enter` open a Windows Yes/No dialog first;
+  `--confirm all` asks before every action, `--confirm off` never.
+- **App allowlist:** `--allow-apps chrome.exe,notepad.exe` limits input to the listed apps.
+  Coordinate clicks, scrolls and drags are checked against the window actually under the pointer.
+- **Rate limit:** 60 actions per minute and 10 per second by default (`--max-actions-per-minute`).
+- **Prompt injection:** screen output is marked `content=untrusted`; server instructions, tool
+  descriptions and skills tell the model never to follow instructions found on screen. README has a
+  Security model section.
+- **Microphone opt-in and recording badge:** the microphone is off unless `--allow-mic` is given;
+  a red, click-through "EYRA is recording" badge (excluded from screen capture) is shown while audio
+  or a watch session is captured.
+- **Recordings auto-deleted** after 60 minutes (`EYRA_AUDIO_TTL_MIN`); stale watch folders swept.
+- **Sensitive windows:** exact executable names, whole-word title phrases (no more blocking
+  "Goalkeeper"), and browser password pages.
+- **OCR password masking:** values next to password labels in 16 languages and `••••` runs are
+  replaced with `[REDACTED]` and blacked out in later screenshots.
+- **Bridge:** browser access only from loopback pages and exact `--allow-origin` values; the token
+  comes from `BCryptGenRandom` and is written to `%LOCALAPPDATA%\eyra\bridge.token`, not printed.
+
 ### One-command setup for any AI app
 - `eyra setup <app>` registers EYRA in the MCP config of Google Antigravity, Gemini CLI, Cursor,
   VS Code, Windsurf or Claude Desktop (and prints the command for Claude Code). It keeps every other
