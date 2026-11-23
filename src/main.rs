@@ -4,6 +4,7 @@ mod cli;
 mod ear;
 mod eye;
 mod hand;
+mod indicator;
 mod mcp;
 mod safety;
 mod setup;

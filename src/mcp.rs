@@ -612,6 +612,7 @@ fn dispatch_tool(state: &mut AppState, name: &str, args: &Value) -> Value {
                     .and_then(Value::as_f64)
                     .unwrap_or(-42.0) as f32,
                 out_path: None,
+                allow_mic: state.safety.config.allow_mic,
             };
             match listen(&opts) {
                 Ok(res) => ok_text(res.summary),

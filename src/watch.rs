@@ -216,6 +216,8 @@ pub struct WatchSession {
     timeline: Arc<Mutex<WatchTimeline>>,
     handles: Vec<JoinHandle<()>>,
     cleaned_up: bool,
+    /// Visible "recording" badge for the whole session
+    _indicator: Option<crate::indicator::RecordingIndicator>,
 }
 
 impl WatchSession {
@@ -287,8 +289,12 @@ impl WatchSession {
             }));
         }
 
-        // Spawn audio worker(s)
-        let channels: Vec<(&'static str, StreamKind)> = match opts.audio {
+        // Spawn audio worker(s); the microphone needs the user's opt-in
+        let (audio, mic_note) = crate::ear::effective_source(opts.audio, safety_cfg.allow_mic)?;
+        if let Some(note) = mic_note {
+            push_info(&timeline, started_at, retention, note);
+        }
+        let channels: Vec<(&'static str, StreamKind)> = match audio {
             AudioSource::System => vec![("system", StreamKind::Loopback)],
             AudioSource::Mic => vec![("mic", StreamKind::Mic)],
             AudioSource::Both => vec![("system", StreamKind::Loopback), ("mic", StreamKind::Mic)],
@@ -325,6 +331,11 @@ impl WatchSession {
             timeline,
             handles,
             cleaned_up: false,
+            _indicator: crate::indicator::RecordingIndicator::show(&format!(
+                "{}{}",
+                crate::ear::source_label(audio),
+                if opts.capture_video { " + screen" } else { "" }
+            )),
         })
     }
 
@@ -485,6 +496,7 @@ impl WatchSession {
         for h in self.handles.drain(..) {
             let _ = h.join();
         }
+        self._indicator = None;
         let elapsed_sec = self.started_at.elapsed().as_secs();
         // Events flushed while the workers shut down (e.g. the last audio chunk) would otherwise
         // never reach the caller, so report them with the stop summary.

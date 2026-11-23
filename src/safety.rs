@@ -26,6 +26,8 @@ pub struct SafetyConfig {
     pub max_actions_per_minute: u32,
     /// Which actions need the user's OK in a Windows dialog first.
     pub confirm: ConfirmMode,
+    /// Microphone capture is off unless the user opts in (--allow-mic / EYRA_ALLOW_MIC).
+    pub allow_mic: bool,
 }
 
 /// When EYRA asks the user before performing an input action.
@@ -91,6 +93,9 @@ impl Default for SafetyConfig {
                 .ok()
                 .and_then(|v| ConfirmMode::parse(&v))
                 .unwrap_or(ConfirmMode::Risky),
+            allow_mic: std::env::var("EYRA_ALLOW_MIC")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
         }
     }
 }

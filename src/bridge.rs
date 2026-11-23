@@ -635,6 +635,10 @@ fn route_request(
                     .and_then(Value::as_f64)
                     .unwrap_or(-42.0) as f32,
                 out_path: None,
+                allow_mic: state_arc
+                    .lock()
+                    .map(|s| s.safety.config.allow_mic)
+                    .unwrap_or(false),
             };
             match listen(&opts) {
                 Ok(res) => {
