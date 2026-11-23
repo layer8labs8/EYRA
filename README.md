@@ -202,7 +202,7 @@ The server negotiates MCP revisions `2025-06-18`, `2025-03-26` and `2024-11-05`.
 | Tool | What it does | Key arguments |
 |---|---|---|
 | `list_audio_devices` | Output (loopback) and input endpoints | — |
-| `listen` | Records system audio, the mic, or both, trims silence, saves a 16 kHz WAV | `seconds`, `source`, `trim_silence` |
+| `listen` | Records system audio (the microphone only with `--allow-mic`), trims silence, saves a 16 kHz WAV. A red "recording" badge is shown meanwhile | `seconds`, `source`, `trim_silence` |
 | `watch_start` / `watch_poll` / `watch_stop` | Rolling timeline of scene-change keyframes and audio clips | `window`, `audio`, `chunk_sec`, `scene_threshold_pct` |
 
 ### Action (disabled in `--read-only`)
@@ -242,7 +242,8 @@ eyra type "hello world" --id 2 --enter
 eyra hotkey ctrl+l
 eyra wait-change --window Chrome
 eyra audio-devices
-eyra listen --seconds 8 --source both
+eyra listen --seconds 8 --source system
+eyra --allow-mic listen --seconds 8 --source both
 eyra watch --window Chrome --duration 60
 eyra ocr-langs
 eyra logs --tail 25
@@ -250,6 +251,8 @@ eyra bench --window Chrome
 eyra setup --list
 eyra serve --port 47821    # optional 127.0.0.1 HTTP bridge (token-authenticated)
 ```
+
+Safety options work with every command, including `mcp`: `--read-only`, `--allow-apps`, `--confirm`, `--max-actions-per-minute`, `--allow-mic` (see [Security model](#security-model)).
 
 `--window` accepts an hwnd (`0x3C051E`), a title substring, a process name or `screen`. Add `--json` for machine-readable output.
 
@@ -265,8 +268,17 @@ EYRA gives an AI agent real control of your desktop, so its defaults assume the 
 | Actions only in apps you list | off | `--allow-apps chrome.exe,notepad.exe` |
 | Rate limit | 60 actions per minute, 10 per second | `--max-actions-per-minute N` (0 = unlimited) |
 | Observation only, no mouse or keyboard tools | off | `--read-only` |
+| Microphone capture | off (system audio only) | `--allow-mic` |
+| Visible "EYRA is recording" badge while audio or a watch session is captured | always | — |
+| Recordings deleted from disk | after 60 minutes | `EYRA_AUDIO_TTL_MIN` (0 = keep until the 24-clip limit) |
 
-Each flag also has an environment variable (`EYRA_CONFIRM`, `EYRA_ALLOW_APPS`, `EYRA_MAX_ACTIONS_PER_MIN`, `EYRA_READ_ONLY`), which is handy in an MCP host's config. Coordinate clicks, scrolls and drags are checked against the window actually under the pointer.
+Each flag also has an environment variable (`EYRA_CONFIRM`, `EYRA_ALLOW_APPS`, `EYRA_MAX_ACTIONS_PER_MIN`, `EYRA_READ_ONLY`, `EYRA_ALLOW_MIC`), which is handy in an MCP host's config. For example, to let an agent act only in Notepad and confirm every step:
+
+```json
+{ "command": "C:\\Tools\\eyra\\eyra.exe", "args": ["mcp", "--allow-apps", "notepad.exe", "--confirm", "all"] }
+```
+
+The confirmation dialog appears on your desktop and the tool call waits for your answer, so leave `--confirm all` off for unattended runs. Coordinate clicks, scrolls and drags are checked against the window actually under the pointer.
 
 **What EYRA can't protect against:** an agent you allowed to act in an app can still do anything a person could do there with ordinary-sounding buttons. For sensitive work, combine `--allow-apps` with `--confirm all`, or use `--read-only`.
 
@@ -275,7 +287,9 @@ Each flag also has an environment variable (`EYRA_CONFIRM`, `EYRA_ALLOW_APPS`, `
 | Guard | Behaviour |
 |---|---|
 | Password fields | Values are always shown as `[REDACTED]` and blacked out in screenshots and before OCR |
-| Sensitive windows | 1Password, KeePass, Bitwarden and Windows Security can't be read or controlled unless you pass `--allow-sensitive` |
+| Sensitive windows | Password managers (1Password, KeePass, Bitwarden, LastPass, Dashlane, …, matched by executable name), Windows credential and UAC prompts, and browser password pages (Google Password Manager, Edge/Firefox *Passwords*, *Wallet*) can't be read or controlled unless you pass `--allow-sensitive` |
+| OCR text | OCR can't see which field is a password, so values next to a *Password* / *Parol* / *Şifre* / *Пароль* label (16 languages) and runs of `••••` are masked, and OCR output says that this masking is heuristic |
+| Local HTTP bridge | `eyra serve` accepts browser calls only from loopback pages and origins you list exactly with `--allow-origin`. Its 256-bit token is written to `%LOCALAPPDATA%\eyra\bridge.token`, never printed |
 | `--read-only` | Removes all input tools from the MCP tool list and rejects them in the CLI and bridge |
 | Corner failsafe | Moving the mouse to the top-left corner `(0,0)` halts input actions |
 | Kill switch | `Ctrl+Alt+Esc` latches an emergency stop until eyra restarts |
@@ -291,6 +305,8 @@ Each flag also has an environment variable (`EYRA_CONFIRM`, `EYRA_ALLOW_APPS`, `
 | OCR misses your language | Run `eyra ocr-langs`, then install the language's OCR pack in Windows Settings → Time & Language → Language, and pass `ocr_lang`. |
 | Clicks or typing do nothing in an admin window | Windows UIPI blocks input to elevated windows from a non-elevated process. Run eyra elevated, or the target app non-elevated. |
 | Coordinates are off on a multi-monitor or 150% DPI setup | eyra is per-monitor DPI aware and coordinates are physical pixels. Use `#id` clicks rather than hand-computed points. |
+| `listen` says "microphone skipped" or refuses `source="mic"` | The microphone is off by default. Start eyra with `--allow-mic` (or `EYRA_ALLOW_MIC=1` in the MCP config). |
+| An action fails with "rate limit reached" or "not in the allowed apps" | That's `--max-actions-per-minute` / `--allow-apps` working; adjust the flag if the limit is too tight. |
 
 ### Environment variables
 
@@ -298,6 +314,11 @@ Each flag also has an environment variable (`EYRA_CONFIRM`, `EYRA_ALLOW_APPS`, `
 |---|---|
 | `EYRA_LOG_FILE` / `EYRA_NO_LOG` | Audit log path / disable logging |
 | `EYRA_READ_ONLY` | Forces read-only mode |
+| `EYRA_ALLOW_APPS` | Comma-separated apps that may receive input (`--allow-apps`) |
+| `EYRA_CONFIRM` | `risky` (default), `all` or `off` (`--confirm`) |
+| `EYRA_MAX_ACTIONS_PER_MIN` | Rate limit, default 60, 0 = unlimited |
+| `EYRA_ALLOW_MIC=1` | Allows microphone capture (`--allow-mic`) |
+| `EYRA_AUDIO_TTL_MIN` | Minutes before recordings are deleted, default 60, 0 = no age limit |
 | `EYRA_OCR_SCALE=2` | Upscales frames before OCR (slower; can help with very small text) |
 
 ## Architecture
