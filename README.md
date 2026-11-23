@@ -127,7 +127,7 @@ The binary isn't code-signed yet, so Windows SmartScreen may show a warning on f
 
 ### Build from source
 
-Requirements: Windows 10/11 and a stable Rust toolchain. The repo pins `stable-x86_64-pc-windows-gnu`, which needs MinGW-w64. To use MSVC instead, delete `rust-toolchain.toml`.
+Requirements: Windows 10/11 and a stable Rust toolchain (MSVC or GNU). Official releases are built with `stable-x86_64-pc-windows-gnu`, which needs no Visual Studio; to use it locally, run `rustup override set stable-x86_64-pc-windows-gnu` in the repository folder.
 
 ```powershell
 cargo build --release
