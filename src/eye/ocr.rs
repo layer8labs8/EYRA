@@ -234,3 +234,170 @@ pub fn run_ocr(frame: &CapturedFrame, lang_tag: Option<&str>) -> Result<Vec<UiEl
 
     Ok(elements)
 }
+
+/// Words that label a password field in common UI languages (matched case-insensitively).
+const PASSWORD_LABELS: &[&str] = &[
+    "password",
+    "passwort",
+    "passcode",
+    "passphrase",
+    "mot de passe",
+    "contraseña",
+    "contrasena",
+    "senha",
+    "wachtwoord",
+    "hasło",
+    "haslo",
+    "şifre",
+    "sifre",
+    "parol",
+    "parola",
+    "пароль",
+    "密码",
+    "密碼",
+    "パスワード",
+    "비밀번호",
+];
+
+fn is_password_label(text: &str) -> bool {
+    let t = text.to_lowercase();
+    // Labels are short ("Password", "New password *", "Parol:"); sentences and links such as
+    // "Forgot your password?" are not.
+    if t.trim_end().ends_with('?') || t.split_whitespace().count() > 4 {
+        return false;
+    }
+    PASSWORD_LABELS.iter().any(|label| {
+        t.match_indices(label).any(|(i, m)| {
+            let before = t[..i].chars().next_back();
+            let after = t[i + m.len()..].chars().next();
+            !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+        })
+    })
+}
+
+/// A line that is mostly masking characters (••••, ****): a password being typed or shown.
+fn is_mask_run(text: &str) -> bool {
+    let t: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
+    let masks = t
+        .iter()
+        .filter(|c| matches!(c, '•' | '●' | '*' | '·' | '∙' | '⚫' | '◦' | '○'))
+        .count();
+    masks >= 4 && masks * 10 >= t.len() * 8
+}
+
+fn redact(el: &mut UiElement) {
+    el.name = "[REDACTED]".to_string();
+    el.value = None;
+    el.is_password = true;
+}
+
+/// OCR can't see which field is a password, so mask what is likely to be one:
+/// the value after `Password:` on the same line, the nearest line to the right of or just below
+/// a password label, and lines made of masking dots. Returns the rects to black out in
+/// screenshots of the same window.
+pub fn guard_ocr_passwords(elements: &mut [UiElement]) -> Vec<Rect> {
+    let mut redacted = Vec::new();
+    let labels: Vec<usize> = (0..elements.len())
+        .filter(|&i| is_password_label(&elements[i].name))
+        .collect();
+
+    for &li in &labels {
+        let label = elements[li].clone();
+        // "Password: hunter2" on one OCR line: keep the label, hide the rest
+        if let Some(pos) = label.name.find(':') {
+            if !label.name[pos + 1..].trim().is_empty() {
+                elements[li].name = format!("{}: [REDACTED]", label.name[..pos].trim_end());
+                elements[li].is_password = true;
+                redacted.push(label.rect);
+                continue;
+            }
+        }
+        // Otherwise the value is usually the nearest line to the right (same row) or just below
+        let r = label.rect;
+        let best = (0..elements.len())
+            .filter(|&j| j != li && !labels.contains(&j))
+            .filter_map(|j| {
+                let c = elements[j].rect;
+                let same_row = c.y < r.bottom() && c.bottom() > r.y && c.x >= r.right() - 2;
+                let below = c.y >= r.y
+                    && c.y <= r.bottom() + 3 * r.h.max(12)
+                    && c.x < r.right() + 200
+                    && c.right() > r.x - 40;
+                if same_row && c.x - r.right() <= 600 {
+                    Some((c.x - r.right(), j))
+                } else if below {
+                    Some((1000 + c.y - r.bottom(), j))
+                } else {
+                    None
+                }
+            })
+            .min();
+        if let Some((_, j)) = best {
+            redacted.push(elements[j].rect);
+            redact(&mut elements[j]);
+        }
+    }
+    for el in elements.iter_mut() {
+        if !el.is_password && is_mask_run(&el.name) {
+            redacted.push(el.rect);
+            redact(el);
+        }
+    }
+    redacted
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(text: &str, x: i32, y: i32, w: i32) -> UiElement {
+        UiElement {
+            id: 0,
+            role: "ocr".into(),
+            name: text.into(),
+            value: None,
+            state: None,
+            rect: Rect::new(x, y, w, 16),
+            source: ElementSource::Ocr,
+            is_password: false,
+            is_interactive: false,
+            runtime_id: vec![],
+        }
+    }
+
+    #[test]
+    fn masks_value_next_to_or_below_a_password_label() {
+        let mut els = vec![
+            line("Username", 100, 100, 70),
+            line("alex", 200, 100, 40),
+            line("Password", 100, 140, 70),
+            line("hunter2", 200, 140, 60), // same row, right of the label
+            line("Parol", 100, 200, 50),
+            line("gizli123", 100, 222, 70), // just below the label
+        ];
+        let rects = guard_ocr_passwords(&mut els);
+        assert_eq!(els[1].name, "alex");
+        assert_eq!(els[3].name, "[REDACTED]");
+        assert_eq!(els[5].name, "[REDACTED]");
+        assert_eq!(rects.len(), 2);
+        assert!(els[2].name == "Password" && !els[2].is_password);
+    }
+
+    #[test]
+    fn masks_inline_value_and_dot_runs_but_not_ordinary_text() {
+        let mut els = vec![
+            line("Password: hunter2", 100, 100, 150),
+            line("••••••••", 100, 200, 80),
+            line("Forgot your password?", 100, 300, 160),
+            line("Passwordless sign-in is here", 100, 400, 200),
+        ];
+        guard_ocr_passwords(&mut els);
+        assert_eq!(els[0].name, "Password: [REDACTED]");
+        assert_eq!(els[1].name, "[REDACTED]");
+        // "Passwordless" is not the word "password", and a question/link isn't a label
+        assert_eq!(els[3].name, "Passwordless sign-in is here");
+        assert!(!is_password_label("Forgot your password?"));
+        assert!(is_password_label("Confirm password *"));
+        assert!(is_password_label("Şifrə / Пароль:") || is_password_label("Пароль:"));
+    }
+}
