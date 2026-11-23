@@ -78,6 +78,20 @@ Run it on your own machine:
 eyra bench --window Chrome
 ```
 
+### Real tasks
+
+Five scripted desktop tasks, 5 runs each (Windows 10, 1366x768). The steps are scripted with no LLM in the loop, so this measures whether EYRA's observations and actions are reliable; an agent's own success also depends on its model. Full method and output: [`bench/RESULTS.md`](bench/RESULTS.md).
+
+| Task | Success | Tool calls | Tokens (EYRA) | Same observations as screenshots | Time |
+|---|---|---|---|---|---|
+| Type a sentence into Notepad and confirm it | 5/5 | 3 | 200 | 699 | 0.2 s |
+| Open Notepad's Edit menu and read its items | 5/5 | 5 | 340 | 699 | 0.6 s |
+| Fill a form field, tick a checkbox, press a button | 5/5 | 5 | 193 | 276 | 0.9 s |
+| Find three files in a File Explorer folder | 5/5 | 1 | 891 | 561 | 1.4 s |
+| Wait for a status label to change and read it | 5/5 | 3 | 138 | 276 | 2.3 s |
+
+All 25 runs succeeded. List-heavy windows such as File Explorer cost more than a screenshot on the first look (the navigation pane and ribbon are listed too); the savings come from the steps after it. Reproduce with `powershell -ExecutionPolicy Bypass -File benchun-tasks.ps1`.
+
 ## When to use EYRA (and when not)
 
 | Task | Best tool |

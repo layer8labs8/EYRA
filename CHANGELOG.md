@@ -2,6 +2,14 @@
 
 ## Unreleased (next: 0.4.0)
 
+### Benchmark and fixes it found
+- `bench/run-tasks.ps1`: five scripted desktop tasks (Notepad typing and menus, a WinForms form,
+  File Explorer, waiting for a change), run through the MCP server with success rate, tool calls,
+  tokens and time next to the screenshot cost. Results in `bench/RESULTS.md`: 25/25 runs succeeded.
+- `wait_change` missed small changes such as a status line (the default threshold was 1% of the
+  window) and, with a lower threshold, fired on a blinking caret. Default is now 0.2% **and** at
+  least 3 changed 16x16 blocks.
+
 ### Security
 - **Confirmation for risky actions (on by default):** clicks on delete / send / pay / publish-style
   controls (8 languages) and `shift+delete`, `ctrl+enter` open a Windows Yes/No dialog first;
