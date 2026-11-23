@@ -1,0 +1,98 @@
+name: Release
+
+# Push a tag such as v0.3.4 to build, attest and publish every release asset on GitHub's runners.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write       # create the release and upload assets
+  id-token: write       # sign build provenance
+  attestations: write   # store the attestation
+
+env:
+  # Releases are built with the GNU toolchain (no Visual Studio needed, no VC++ runtime DLLs)
+  RUSTUP_TOOLCHAIN: stable-x86_64-pc-windows-gnu
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
+          rustup show active-toolchain
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check tag matches Cargo.toml
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} does not match Cargo.toml version $v" }
+          "VERSION=$v" >> $env:GITHUB_ENV
+
+      - name: Test
+        run: cargo test --release
+
+      - name: Build and package
+        shell: pwsh
+        run: ./scripts/package.ps1
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/eyra.exe
+            dist/eyra-${{ env.VERSION }}-windows-x64.zip
+            dist/eyra-${{ env.VERSION }}.mcpb
+            dist/win32.x64.eyra.zip
+
+      - name: Release notes from CHANGELOG
+        shell: pwsh
+        run: |
+          $lines = Get-Content CHANGELOG.md
+          $start = [Array]::IndexOf($lines, "## $env:VERSION")
+          if ($start -lt 0) { throw "CHANGELOG.md has no '## $env:VERSION' section" }
+          $body = @()
+          for ($i = $start + 1; $i -lt $lines.Count -and -not $lines[$i].StartsWith('## '); $i++) { $body += $lines[$i] }
+          $notes = @(
+            "**EYRA: Eye + Ear + Action for AI agents on Windows.** One standalone ``eyra.exe`` that works as an MCP server, an agent skill and a CLI."
+            ""
+            "## What's new"
+            ($body -join "`n").Trim()
+            ""
+            "## Install"
+            ""
+            "| Agent | How |"
+            "|---|---|"
+            "| Claude Desktop | open ``eyra-$env:VERSION.mcpb`` |"
+            "| Claude Code | ``/plugin install eyra --marketplace layer8labs8/EYRA`` |"
+            "| Gemini CLI | ``gemini extensions install https://github.com/layer8labs8/EYRA`` |"
+            "| Any MCP host | ``{""command"": ""C:\\path\\to\\eyra.exe"", ""args"": [""mcp""]}`` |"
+            ""
+            "## Verify the download"
+            ""
+            "Every file was built on GitHub Actions from this tag and carries a signed build attestation:"
+            ""
+            '```powershell'
+            "gh attestation verify eyra.exe -R layer8labs8/EYRA"
+            "Get-FileHash .\eyra.exe -Algorithm SHA256   # compare with SHA256SUMS.txt"
+            '```'
+            ""
+            "The binary isn't code-signed yet, so Windows SmartScreen may warn on first run: *More info* → *Run anyway*."
+          )
+          $notes -join "`n" | Set-Content -Encoding utf8 release-notes.md
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" --title "EYRA $env:VERSION" --notes-file release-notes.md --verify-tag `
+            dist/eyra.exe "dist/eyra-$env:VERSION-windows-x64.zip" "dist/eyra-$env:VERSION.mcpb" dist/win32.x64.eyra.zip dist/SHA256SUMS.txt

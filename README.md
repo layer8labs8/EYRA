@@ -17,7 +17,7 @@
   <img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"/>
   <img alt="Platform: Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6"/>
   <img alt="MCP 2025-06-18" src="https://img.shields.io/badge/MCP-2025--06--18-6E56CF"/>
-  <img alt="Tests: 40 passing" src="https://img.shields.io/badge/tests-40%20passing-2EA44F"/>
+  <a href="https://github.com/layer8labs8/EYRA/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/layer8labs8/EYRA/actions/workflows/ci.yml/badge.svg"/></a>
 </p>
 
 https://github.com/user-attachments/assets/023b3238-3dee-4a1b-b20c-65e0447f14b8
@@ -109,15 +109,25 @@ All packages contain the same standalone `eyra.exe`; nothing else is installed.
 2. Put it anywhere, for example `C:\Tools\eyra\eyra.exe`. Nothing else needs to be installed: it runs on a stock Windows 10/11.
 3. Connect it to your agent (see below).
 
-The binary isn't code-signed yet, so Windows SmartScreen may show a warning on first run: choose *More info* → *Run anyway*. You can check the download against the SHA-256 published with the release:
+### Verify the download
+
+Every release file is built by [GitHub Actions](.github/workflows/release.yml) from the tagged source, not on a developer's machine, and carries a signed [build provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations). With the [GitHub CLI](https://cli.github.com/):
 
 ```powershell
-Get-FileHash .\eyra.exe -Algorithm SHA256
+gh attestation verify eyra.exe -R layer8labs8/EYRA
 ```
+
+It confirms which repository, commit and workflow produced the file. To compare checksums instead:
+
+```powershell
+Get-FileHash .\eyra.exe -Algorithm SHA256   # compare with SHA256SUMS.txt from the release
+```
+
+The binary isn't code-signed yet, so Windows SmartScreen may show a warning on first run: choose *More info* → *Run anyway*.
 
 ### Build from source
 
-Requirements: Windows 10/11 and a stable Rust toolchain. The repo pins `stable-x86_64-pc-windows-gnu`, which needs MinGW-w64. To use MSVC instead, delete `rust-toolchain.toml`.
+Requirements: Windows 10/11 and a stable Rust toolchain (MSVC or GNU). Official releases are built with `stable-x86_64-pc-windows-gnu`, which needs no Visual Studio; to use it locally, run `rustup override set stable-x86_64-pc-windows-gnu` in the repository folder.
 
 ```powershell
 cargo build --release
