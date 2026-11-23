@@ -61,7 +61,8 @@ pub enum Command {
         /// Optional static Bearer token (auto-generated random token if omitted).
         #[arg(long)]
         token: Option<String>,
-        /// Extra allowed CORS origin(s) in addition to localhost, chrome-extension, and *.web.app.
+        /// Exact extra CORS origin(s) allowed besides loopback pages, e.g.
+        /// chrome-extension://<extension id> or https://studio.example.com (no wildcards).
         #[arg(long = "allow-origin")]
         allow_origins: Vec<String>,
     },
@@ -361,10 +362,26 @@ pub fn run(cli: Cli) -> Result<()> {
         allow_origins,
     } = cli.command
     {
+        let extra_origins = crate::bridge::validate_extra_origins(&allow_origins)?;
+        // A token passed with --token is already known to the caller. A generated one is
+        // written to a private file in the user's profile instead of being printed.
+        let (token, token_file) = match token {
+            Some(t) => (t, None),
+            None => {
+                let t = generate_session_token()?;
+                let path = crate::bridge::token_file_path();
+                if let Some(dir) = path.parent() {
+                    std::fs::create_dir_all(dir)?;
+                }
+                std::fs::write(&path, &t)?;
+                (t, Some(path))
+            }
+        };
         let bridge_cfg = BridgeConfig {
             port,
-            token: token.unwrap_or_else(generate_session_token),
-            extra_origins: allow_origins,
+            token,
+            extra_origins,
+            token_file,
         };
         return run_bridge_server(state, bridge_cfg);
     }
