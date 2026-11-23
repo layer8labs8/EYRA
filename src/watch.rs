@@ -257,7 +257,7 @@ impl WatchSession {
             .map(|d| d.as_secs())
             .unwrap_or(0);
         let id = format!("w_{}", stamp);
-        sweep_empty_session_dirs(&default_sessions_dir());
+        sweep_session_dirs(&default_sessions_dir(), crate::ear::audio_ttl());
         let session_dir = default_sessions_dir().join(&id);
         fs::create_dir_all(&session_dir)?;
 
@@ -851,23 +851,39 @@ fn remove_dir_with_retry(dir: &Path) {
     }
 }
 
-/// Removes empty `w_*` folders left behind by earlier sessions (never touches non-empty ones).
-fn sweep_empty_session_dirs(root: &Path) {
+/// Cleans `w_*` folders left behind by earlier sessions (for example after a crash): empty ones
+/// always, and ones whose newest file is older than `ttl`. A running session keeps writing
+/// files, so its folder never looks stale.
+pub fn sweep_session_dirs(root: &Path, ttl: Option<Duration>) {
     let Ok(entries) = fs::read_dir(root) else {
         return;
     };
+    let now = std::time::SystemTime::now();
     for e in entries.flatten() {
         let p = e.path();
         let is_session = p.is_dir()
             && p.file_name()
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| n.starts_with("w_"));
-        if is_session
-            && fs::read_dir(&p)
-                .map(|mut d| d.next().is_none())
-                .unwrap_or(false)
-        {
-            let _ = fs::remove_dir(&p);
+        if !is_session {
+            continue;
+        }
+        let newest = fs::read_dir(&p).ok().and_then(|d| {
+            d.flatten()
+                .filter_map(|f| f.metadata().ok()?.modified().ok())
+                .max()
+        });
+        match newest {
+            None => {
+                let _ = fs::remove_dir(&p);
+            }
+            Some(t) => {
+                let stale =
+                    ttl.is_some_and(|ttl| now.duration_since(t).is_ok_and(|age| age >= ttl));
+                if stale {
+                    remove_dir_with_retry(&p);
+                }
+            }
         }
     }
 }
@@ -952,11 +968,33 @@ mod tests {
             fs::create_dir_all(d).unwrap();
         }
         fs::write(full.join("sys_0001.wav"), b"x").unwrap();
-        sweep_empty_session_dirs(&root);
+        sweep_session_dirs(&root, None);
         assert!(!empty.exists());
         assert!(full.exists());
         assert!(other.exists());
         remove_dir_with_retry(&root);
         assert!(!root.exists());
+    }
+
+    #[test]
+    fn stale_session_folders_are_swept_active_ones_kept() {
+        let root = std::env::temp_dir().join(format!("eyra_stale_{}", std::process::id()));
+        let stale = root.join("w_old");
+        let active = root.join("w_new");
+        fs::create_dir_all(&stale).unwrap();
+        fs::create_dir_all(&active).unwrap();
+        let old_clip = stale.join("sys_0001.wav");
+        fs::write(&old_clip, b"x").unwrap();
+        fs::write(active.join("sys_0001.wav"), b"x").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&old_clip)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - Duration::from_secs(7200))
+            .unwrap();
+        sweep_session_dirs(&root, Some(Duration::from_secs(3600)));
+        assert!(!stale.exists());
+        assert!(active.exists());
+        remove_dir_with_retry(&root);
     }
 }

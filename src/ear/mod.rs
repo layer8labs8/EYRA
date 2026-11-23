@@ -106,7 +106,7 @@ pub fn listen(opts: &ListenOptions) -> Result<ListenResult> {
 
     let audio_dir = default_audio_dir();
     let _ = fs::create_dir_all(&audio_dir);
-    prune_old_wavs(&audio_dir, MAX_ONESHOT_CLIPS);
+    prune_old_wavs(&audio_dir, MAX_ONESHOT_CLIPS, audio_ttl());
 
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -259,7 +259,42 @@ fn process_and_save_channel(
     })
 }
 
-fn prune_old_wavs(dir: &Path, keep_max: usize) {
+/// How long recordings stay on disk: `EYRA_AUDIO_TTL_MIN` minutes (default 60, 0 = no age limit).
+pub fn audio_ttl() -> Option<std::time::Duration> {
+    let minutes = std::env::var("EYRA_AUDIO_TTL_MIN")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(60);
+    (minutes > 0).then(|| std::time::Duration::from_secs(minutes * 60))
+}
+
+/// Deletes expired `listen` clips and stale watch-session folders. Called when eyra starts and
+/// before each recording, so old audio never piles up.
+pub fn prune_recordings() {
+    prune_old_wavs(&default_audio_dir(), MAX_ONESHOT_CLIPS, audio_ttl());
+    crate::watch::sweep_session_dirs(&crate::watch::default_sessions_dir(), audio_ttl());
+}
+
+fn prune_old_wavs(dir: &Path, keep_max: usize, ttl: Option<std::time::Duration>) {
+    // Age limit first
+    if let (Some(ttl), Ok(entries)) = (ttl, fs::read_dir(dir)) {
+        let now = SystemTime::now();
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|s| s.to_str()) != Some("wav") {
+                continue;
+            }
+            let old = e
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| now.duration_since(t).ok())
+                .is_some_and(|age| age >= ttl);
+            if old {
+                let _ = fs::remove_file(&p);
+            }
+        }
+    }
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -293,6 +328,33 @@ fn prune_old_wavs(dir: &Path, keep_max: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expired_clips_are_deleted_fresh_ones_kept() {
+        let dir = std::env::temp_dir().join(format!("eyra_ttl_test_{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("old.wav");
+        let fresh = dir.join("fresh.wav");
+        let other = dir.join("notes.txt");
+        for f in [&old, &fresh, &other] {
+            fs::write(f, b"x").unwrap();
+        }
+        let two_hours_ago = SystemTime::now() - std::time::Duration::from_secs(7200);
+        fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(two_hours_ago)
+            .unwrap();
+        prune_old_wavs(&dir, 24, Some(std::time::Duration::from_secs(3600)));
+        assert!(!old.exists());
+        assert!(fresh.exists());
+        assert!(other.exists(), "only .wav files are touched");
+        // count limit still applies with no age limit
+        prune_old_wavs(&dir, 0, None);
+        assert!(!fresh.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn microphone_needs_opt_in() {

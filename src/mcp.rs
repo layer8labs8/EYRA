@@ -23,6 +23,8 @@ const SERVER_INSTRUCTIONS: &str = "EYRA gives you eyes, ears and hands on the Wi
 
 pub fn run_mcp_server(state: &mut AppState) -> Result<()> {
     init_dpi_awareness();
+    // Old recordings from earlier sessions are deleted at startup (EYRA_AUDIO_TTL_MIN)
+    crate::ear::prune_recordings();
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = stdout.lock();
