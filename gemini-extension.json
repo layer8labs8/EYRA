@@ -1,6 +1,6 @@
 {
   "name": "eyra",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Eye + Ear + Action for Windows: see any app as compact text (UI Automation + OCR), hear system audio and the mic, and control mouse and keyboard.",
   "mcpServers": {
     "eyra": {

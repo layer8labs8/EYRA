@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.4
+
+### Trusted builds
+- Continuous integration: every push and pull request runs `cargo fmt --check`, `clippy -D warnings`
+  and the full test suite on Windows.
+- Releases are built on GitHub Actions from the tagged source. Every asset carries a signed build
+  provenance attestation, verifiable with `gh attestation verify eyra.exe -R layer8labs8/EYRA`.
+- The repository no longer contains a prebuilt binary: the Claude Code plugin now installs the
+  `.mcpb` bundle from the matching GitHub release.
+
 ## 0.3.3
 
 ### Privacy

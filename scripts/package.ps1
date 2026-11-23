@@ -6,7 +6,8 @@
     eyra-<ver>.mcpb                   Claude Desktop one-click extension (MCP Bundle)
     win32.x64.eyra.zip                Gemini CLI extension archive
     SHA256SUMS.txt                    checksums (LF line endings)
-  and refreshes claude-plugin\bin\eyra.exe (Claude Code / directory plugin)
+  The Claude Code plugin downloads eyra-<ver>.mcpb from the GitHub release, so no binary lives
+  in the repository. Releases are built by .github/workflows/release.yml.
 
 .NOTES
   Requires: cargo (Rust) and Node.js (npx downloads the official @anthropic-ai/mcpb CLI).
@@ -59,8 +60,10 @@ foreach ($m in @("packaging\mcpb\manifest.json", "gemini-extension.json", "claud
   if ($json.version -ne $version) { throw "$m has version $($json.version), Cargo.toml has $version" }
 }
 
-# Claude plugin ships the binary inside its folder (directory installs get only that folder)
-Copy-Item $exe (Join-Path $root "claude-plugin\bin\eyra.exe") -Force
+# The Claude plugin installs the bundle from this version's release
+$pluginServers = (Get-Content "claude-plugin\.claude-plugin\plugin.json" -Raw | ConvertFrom-Json).mcpServers
+$expectedBundle = "https://github.com/layer8labs8/EYRA/releases/download/v$version/eyra-$version.mcpb"
+if ($pluginServers -ne $expectedBundle) { throw "plugin.json mcpServers should be $expectedBundle" }
 
 $dist = Join-Path $root "dist"
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }

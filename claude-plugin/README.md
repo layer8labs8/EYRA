@@ -4,7 +4,7 @@ EYRA gives Claude eyes, ears and hands on the Windows desktop. It reads any wind
 
 This plugin adds two things:
 
-- **The EYRA MCP server** (`bin/eyra.exe`): a single standalone Windows executable, built from the open-source Rust code at [github.com/layer8labs8/EYRA](https://github.com/layer8labs8/EYRA). It runs locally and sends nothing over the network.
+- **The EYRA MCP server**: a single standalone Windows executable, built from the open-source Rust code at [github.com/layer8labs8/EYRA](https://github.com/layer8labs8/EYRA) on GitHub Actions. On install, Claude Code downloads it as an MCP bundle (`.mcpb`) from the matching GitHub release, where every file carries a signed build attestation. It runs locally and sends nothing over the network.
 - **The `eyra` skill**: teaches Claude the low-token workflow (look as text, act by number, check with `see_diff`).
 
 ## Install
@@ -21,7 +21,7 @@ Windows 10 or 11 (x64). The server runs where local MCP servers run: Claude Desk
 
 ## Settings
 
-- **Read-only mode**: turn it on to let Claude only look and listen. The mouse and keyboard tools are then removed.
+To use EYRA in look-and-listen mode only (no mouse or keyboard tools), install the Claude Desktop extension and turn on *Read-only mode*, or run `eyra.exe mcp --read-only` as a custom MCP server.
 
 ## Safety
 
