@@ -274,6 +274,7 @@ mod tests {
             sensitive_blocked: false,
             elapsed_ms: 5,
             coords: Default::default(),
+            page_not_ready: false,
         };
         let curr = SeeSnapshot {
             window: None,
@@ -288,6 +289,7 @@ mod tests {
             sensitive_blocked: false,
             elapsed_ms: 4,
             coords: Default::default(),
+            page_not_ready: false,
         };
 
         let d = diff_snapshots(&prev, &curr);

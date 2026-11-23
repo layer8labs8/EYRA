@@ -9,6 +9,11 @@
 - `wait_change` missed small changes such as a status line (the default threshold was 1% of the
   window) and, with a lower threshold, fired on a blinking caret. Default is now 0.2% **and** at
   least 3 changed 16x16 blocks.
+- Web apps: a web form (text field, drop-down, checkbox, custom `role=button`, tabs,
+  `contenteditable`) was driven end to end in Chrome and Edge. A Chrome or Edge window that is
+  covered by another window or still loading doesn't render its page, so `see` used to return only
+  the browser toolbar. `see` now adds OCR in that case and says
+  `NOTE browser page not rendered yet ... call focus_window(window)`.
 
 ### Security
 - **Confirmation for risky actions (on by default):** clicks on delete / send / pay / publish-style
