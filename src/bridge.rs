@@ -13,15 +13,14 @@ use crate::watch::{WatchOptions, WatchSession};
 use anyhow::{anyhow, Result};
 use base64::Engine;
 use serde_json::{json, Value};
-use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::fs;
-use std::hash::{BuildHasher, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024; // 2 MB request body cap
 
@@ -29,23 +28,60 @@ const MAX_BODY_BYTES: usize = 2 * 1024 * 1024; // 2 MB request body cap
 pub struct BridgeConfig {
     pub port: u16,
     pub token: String,
+    /// Exact origins allowed in addition to loopback (see `validate_extra_origins`).
     pub extra_origins: Vec<String>,
+    /// Set when the token was generated and written to disk (never printed).
+    pub token_file: Option<PathBuf>,
 }
 
-pub fn generate_session_token() -> String {
-    let mut parts = [0u64; 2];
-    for slot in &mut parts {
-        let rs = RandomState::new();
-        let mut hasher = rs.build_hasher();
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        hasher.write_u128(nanos);
-        hasher.write_u32(std::process::id());
-        *slot = hasher.finish();
+/// 256-bit session token from the OS cryptographic RNG (BCryptGenRandom), as 64 hex chars.
+pub fn generate_session_token() -> Result<String> {
+    use windows::Win32::Security::Cryptography::{
+        BCryptGenRandom, BCRYPT_ALG_HANDLE, BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+    };
+    let mut bytes = [0u8; 32];
+    let status = unsafe {
+        BCryptGenRandom(
+            BCRYPT_ALG_HANDLE::default(),
+            &mut bytes,
+            BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+        )
+    };
+    if status.is_err() {
+        return Err(anyhow!("BCryptGenRandom failed (NTSTATUS {:#x})", status.0));
     }
-    format!("{:016x}{:016x}", parts[0], parts[1])
+    Ok(bytes.iter().map(|b| format!("{:02x}", b)).collect())
+}
+
+/// Where `eyra serve` stores a generated token: a file in the user's own profile, so the token
+/// never appears on screen, in terminal scrollback or in a parent process's log.
+pub fn token_file_path() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("eyra")
+        .join("bridge.token")
+}
+
+/// Extra CORS origins must be exact `scheme://host[:port]` values; wildcards are refused.
+pub fn validate_extra_origins(origins: &[String]) -> Result<Vec<String>> {
+    origins
+        .iter()
+        .map(|o| {
+            let o = o.trim().trim_end_matches('/');
+            let ok_scheme = ["http://", "https://", "chrome-extension://", "moz-extension://"]
+                .iter()
+                .any(|s| o.starts_with(s) && o.len() > s.len());
+            if o.contains('*') || !ok_scheme || o[o.find("://").unwrap_or(0) + 3..].contains('/') {
+                Err(anyhow!(
+                    "--allow-origin \"{}\" must be an exact origin such as https://studio.example.com or chrome-extension://<extension id> (no wildcards or paths)",
+                    o
+                ))
+            } else {
+                Ok(o.to_string())
+            }
+        })
+        .collect()
 }
 
 pub fn run_bridge_server(state: AppState, cfg: BridgeConfig) -> Result<()> {
@@ -55,7 +91,9 @@ pub fn run_bridge_server(state: AppState, cfg: BridgeConfig) -> Result<()> {
         .map_err(|e| anyhow!("Failed to bind local bridge on {}: {}", addr, e))?;
 
     println!("EYRA_BRIDGE_READY url=http://{}", addr);
-    println!("EYRA_BRIDGE_TOKEN {}", cfg.token);
+    if let Some(path) = &cfg.token_file {
+        println!("EYRA_BRIDGE_TOKEN_FILE {}", path.display());
+    }
     println!(
         "EYRA_BRIDGE_MODE {}",
         if state.safety.is_read_only() {
@@ -215,19 +253,27 @@ fn split_path_query(raw: &str) -> (String, HashMap<String, String>) {
     }
 }
 
+/// `http://localhost`, `http://127.0.0.1` or `http://[::1]`, optionally with a numeric port.
+fn is_loopback_origin(origin: &str) -> bool {
+    ["http://localhost", "http://127.0.0.1", "http://[::1]"]
+        .iter()
+        .any(|prefix| match origin.strip_prefix(prefix) {
+            Some("") => true,
+            Some(rest) => rest.strip_prefix(':').is_some_and(|port| {
+                !port.is_empty() && port.len() <= 5 && port.bytes().all(|b| b.is_ascii_digit())
+            }),
+            None => false,
+        })
+}
+
+/// Browsers may call the bridge only from a loopback page or from an origin the user listed
+/// exactly with `--allow-origin` (no blanket chrome-extension:// or *.web.app access).
 pub fn resolve_cors_origin(origin: Option<&str>, extra: &[String]) -> Option<String> {
     let orig = origin?.trim();
     if orig.is_empty() {
         return None;
     }
-    let allowed = orig.starts_with("http://localhost:")
-        || orig == "http://localhost"
-        || orig.starts_with("http://127.0.0.1:")
-        || orig == "http://127.0.0.1"
-        || orig.starts_with("chrome-extension://")
-        || (orig.starts_with("https://")
-            && (orig.ends_with(".web.app") || orig.ends_with(".firebaseapp.com")))
-        || extra.iter().any(|e| e == orig || e == "*");
+    let allowed = is_loopback_origin(orig) || extra.iter().any(|e| e == orig);
     if allowed {
         Some(orig.to_string())
     } else {
@@ -876,12 +922,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cors_allowlist_permits_local_extension_and_firebase_only() {
+    fn cors_allows_loopback_and_exact_listed_origins_only() {
         assert!(resolve_cors_origin(Some("http://localhost:5173"), &[]).is_some());
         assert!(resolve_cors_origin(Some("http://127.0.0.1:47821"), &[]).is_some());
-        assert!(resolve_cors_origin(Some("chrome-extension://abcdefg"), &[]).is_some());
-        assert!(resolve_cors_origin(Some("https://eyra-hybrid.web.app"), &[]).is_some());
+        assert!(resolve_cors_origin(Some("http://[::1]:8080"), &[]).is_some());
+        // no blanket access for extensions or hosted sites any more
+        assert!(resolve_cors_origin(Some("chrome-extension://abcdefg"), &[]).is_none());
+        assert!(resolve_cors_origin(Some("https://eyra-hybrid.web.app"), &[]).is_none());
         assert!(resolve_cors_origin(Some("https://evil.example.com"), &[]).is_none());
+        // look-alike loopback origins are refused
+        assert!(resolve_cors_origin(Some("http://localhost.evil.com"), &[]).is_none());
+        assert!(resolve_cors_origin(Some("http://localhost:80.evil.com"), &[]).is_none());
+        assert!(resolve_cors_origin(Some("http://127.0.0.1.evil.com"), &[]).is_none());
+        // an exactly listed origin is allowed, a sibling isn't
+        let extra = vec!["chrome-extension://abcdefg".to_string()];
+        assert!(resolve_cors_origin(Some("chrome-extension://abcdefg"), &extra).is_some());
+        assert!(resolve_cors_origin(Some("chrome-extension://other"), &extra).is_none());
+    }
+
+    #[test]
+    fn extra_origins_must_be_exact() {
+        assert!(validate_extra_origins(&["*".into()]).is_err());
+        assert!(validate_extra_origins(&["https://*.web.app".into()]).is_err());
+        assert!(validate_extra_origins(&["https://a.web.app/path".into()]).is_err());
+        assert!(validate_extra_origins(&["evil.com".into()]).is_err());
+        assert_eq!(
+            validate_extra_origins(&["https://studio.example.com/".into()]).unwrap(),
+            vec!["https://studio.example.com".to_string()]
+        );
     }
 
     #[test]
@@ -895,9 +963,11 @@ mod tests {
     }
 
     #[test]
-    fn generated_session_token_is_32_hex_chars() {
-        let tok = generate_session_token();
-        assert_eq!(tok.len(), 32);
-        assert!(tok.chars().all(|c| c.is_ascii_hexdigit()));
+    fn session_token_is_256_bit_random_hex() {
+        let a = generate_session_token().unwrap();
+        let b = generate_session_token().unwrap();
+        assert_eq!(a.len(), 64);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, b);
     }
 }
