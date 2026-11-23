@@ -1,6 +1,9 @@
 use crate::types::WindowInfo;
 use anyhow::{bail, Result};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use windows::Win32::Foundation::POINT;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, VK_CONTROL, VK_ESCAPE, VK_MENU,
@@ -17,6 +20,55 @@ pub struct SafetyConfig {
     pub sensitive_patterns: Vec<String>,
     /// Executable names (lowercase, exact match) of password managers and credential prompts.
     pub sensitive_processes: Vec<String>,
+    /// When set, mouse/keyboard actions are allowed only in these apps (exe names, lowercase).
+    pub allowed_apps: Option<Vec<String>>,
+    /// Upper bound on input actions per minute (0 = unlimited). Also caps bursts at 10/second.
+    pub max_actions_per_minute: u32,
+    /// Which actions need the user's OK in a Windows dialog first.
+    pub confirm: ConfirmMode,
+}
+
+/// When EYRA asks the user before performing an input action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmMode {
+    /// Never ask.
+    Off,
+    /// Ask before actions that look hard to undo: deleting, sending, paying, publishing...
+    Risky,
+    /// Ask before every input action.
+    All,
+}
+
+impl ConfirmMode {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "off" | "none" | "never" | "0" | "false" => Some(Self::Off),
+            "risky" | "default" => Some(Self::Risky),
+            "all" | "always" => Some(Self::All),
+            _ => None,
+        }
+    }
+}
+
+fn env_list(var: &str) -> Option<Vec<String>> {
+    let v = std::env::var(var).ok()?;
+    let list = parse_app_list(&v);
+    (!list.is_empty()).then_some(list)
+}
+
+/// "chrome, Notepad.exe ,code" -> ["chrome.exe", "notepad.exe", "code.exe"]
+pub fn parse_app_list(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(|a| a.trim().to_lowercase())
+        .filter(|a| !a.is_empty())
+        .map(|a| {
+            if a.ends_with(".exe") {
+                a
+            } else {
+                format!("{}.exe", a)
+            }
+        })
+        .collect()
 }
 
 impl Default for SafetyConfig {
@@ -30,6 +82,15 @@ impl Default for SafetyConfig {
             hotkey_failsafe: true,
             sensitive_patterns: default_sensitive_patterns(),
             sensitive_processes: default_sensitive_processes(),
+            allowed_apps: env_list("EYRA_ALLOW_APPS"),
+            max_actions_per_minute: std::env::var("EYRA_MAX_ACTIONS_PER_MIN")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(60),
+            confirm: std::env::var("EYRA_CONFIRM")
+                .ok()
+                .and_then(|v| ConfirmMode::parse(&v))
+                .unwrap_or(ConfirmMode::Risky),
         }
     }
 }
@@ -109,6 +170,88 @@ const BROWSER_VAULT_PAGES: &[&str] = &[
     "microsoft wallet",
 ];
 
+/// Words on a button or link that usually mean "hard to undo" (EN, AZ, TR, RU, DE, FR, ES).
+const RISKY_WORDS: &[&str] = &[
+    "delete",
+    "remove",
+    "erase",
+    "discard",
+    "destroy",
+    "wipe",
+    "empty trash",
+    "uninstall",
+    "format",
+    "reset",
+    "send",
+    "submit",
+    "publish",
+    "post",
+    "reply all",
+    "pay",
+    "purchase",
+    "buy",
+    "checkout",
+    "place order",
+    "order now",
+    "transfer",
+    "confirm",
+    "sign out",
+    "log out",
+    "sil",
+    "göndər",
+    "ödə",
+    "təsdiqlə",
+    "yayımla",
+    "satın al",
+    "gönder",
+    "öde",
+    "onayla",
+    "yayınla",
+    "удалить",
+    "отправить",
+    "оплатить",
+    "купить",
+    "подтвердить",
+    "опубликовать",
+    "löschen",
+    "senden",
+    "kaufen",
+    "bezahlen",
+    "supprimer",
+    "envoyer",
+    "payer",
+    "acheter",
+    "eliminar",
+    "enviar",
+    "pagar",
+    "comprar",
+];
+
+/// Hotkeys that delete permanently or send.
+const RISKY_HOTKEYS: &[&str] = &["shift+delete", "ctrl+shift+delete", "ctrl+enter", "alt+s"];
+
+/// Whether an element label (button, link, menu item) looks like a hard-to-undo action.
+pub fn is_risky_label(label: &str) -> bool {
+    let l = label.to_lowercase();
+    RISKY_WORDS
+        .iter()
+        .any(|w| contains_whole_word_unicode(&l, w))
+}
+
+pub fn is_risky_hotkey(normalized: &[String]) -> bool {
+    let combo = normalized.join("+").to_lowercase();
+    RISKY_HOTKEYS.contains(&combo.as_str())
+}
+
+/// Unicode-aware whole-word match (for labels in any script).
+fn contains_whole_word_unicode(hay: &str, needle: &str) -> bool {
+    hay.match_indices(needle).any(|(i, m)| {
+        let before = hay[..i].chars().next_back();
+        let after = hay[i + m.len()..].chars().next();
+        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+    })
+}
+
 /// `needle` occurs in `hay` with no letter or digit directly before or after it.
 fn contains_whole_phrase(hay: &str, needle: &str) -> bool {
     if needle.is_empty() {
@@ -136,6 +279,7 @@ fn contains_whole_phrase(hay: &str, needle: &str) -> bool {
 pub struct SafetyGuard {
     pub config: SafetyConfig,
     hotkey_tripped: AtomicBool,
+    recent_actions: Mutex<VecDeque<Instant>>,
 }
 
 impl SafetyGuard {
@@ -143,6 +287,7 @@ impl SafetyGuard {
         Self {
             config,
             hotkey_tripped: AtomicBool::new(false),
+            recent_actions: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -234,7 +379,101 @@ impl SafetyGuard {
             }
         }
 
+        self.check_app_allowed(target_window)?;
+        self.check_rate_limit()?;
         Ok(())
+    }
+
+    /// `--allow-apps`: input actions only in the listed executables.
+    pub fn check_app_allowed(&self, target_window: Option<&WindowInfo>) -> Result<()> {
+        let Some(allowed) = &self.config.allowed_apps else {
+            return Ok(());
+        };
+        let Some(win) = target_window else {
+            bail!(
+                "Action blocked: --allow-apps is set ({}), but the target window couldn't be determined. Pass window=... or click by #id.",
+                allowed.join(", ")
+            );
+        };
+        let process = win.process.to_lowercase();
+        if allowed.contains(&process) {
+            Ok(())
+        } else {
+            bail!(
+                "Action blocked: {} is not in the allowed apps ({}). Restart eyra with --allow-apps to change the list.",
+                win.process,
+                allowed.join(", ")
+            )
+        }
+    }
+
+    /// Stops a runaway agent: at most `max_actions_per_minute` actions per 60 s and 10 per second.
+    pub fn check_rate_limit(&self) -> Result<()> {
+        let per_minute = self.config.max_actions_per_minute;
+        if per_minute == 0 {
+            return Ok(());
+        }
+        let now = Instant::now();
+        let mut q = self
+            .recent_actions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        while q
+            .front()
+            .is_some_and(|t| now.duration_since(*t) >= Duration::from_secs(60))
+        {
+            q.pop_front();
+        }
+        let last_second = q
+            .iter()
+            .filter(|t| now.duration_since(**t) < Duration::from_secs(1))
+            .count();
+        if q.len() >= per_minute as usize {
+            bail!(
+                "Action blocked: rate limit reached ({} actions per minute). Wait a moment, or raise it with --max-actions-per-minute.",
+                per_minute
+            );
+        }
+        if last_second >= 10 {
+            bail!("Action blocked: more than 10 actions in one second. Slow down.");
+        }
+        q.push_back(now);
+        Ok(())
+    }
+
+    /// Shows a Windows Yes/No dialog when the confirm mode requires it; "No" blocks the action.
+    pub fn confirm_action(&self, description: &str, risky: bool) -> Result<()> {
+        let needed = match self.config.confirm {
+            ConfirmMode::Off => false,
+            ConfirmMode::Risky => risky,
+            ConfirmMode::All => true,
+        };
+        if !needed {
+            return Ok(());
+        }
+        use windows::core::HSTRING;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            MessageBoxW, IDYES, MB_DEFBUTTON2, MB_ICONWARNING, MB_SETFOREGROUND, MB_TOPMOST,
+            MB_YESNO,
+        };
+        let text = HSTRING::from(format!(
+            "An AI agent wants to:\n\n{}\n\nAllow this action?",
+            description
+        ));
+        let caption = HSTRING::from("EYRA: confirm action");
+        let answer = unsafe {
+            MessageBoxW(
+                None,
+                &text,
+                &caption,
+                MB_YESNO | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND | MB_DEFBUTTON2,
+            )
+        };
+        if answer == IDYES {
+            Ok(())
+        } else {
+            bail!("Action declined by the user: {}", description)
+        }
     }
 
     pub fn check_hotkey_allowed(
@@ -295,6 +534,109 @@ mod tests {
         assert!(guard.is_sensitive_window("My DB", "KeePassXC.exe"));
         assert!(guard.is_sensitive_window("Windows Security", "CredentialUIBroker.exe"));
         assert!(!guard.is_sensitive_window("GitHub - Google Chrome", "chrome.exe"));
+    }
+
+    fn win(process: &str) -> WindowInfo {
+        WindowInfo {
+            hwnd: 1,
+            title: "t".into(),
+            process: process.into(),
+            pid: 1,
+            rect: Rect::new(0, 0, 10, 10),
+            is_foreground: true,
+            is_minimized: false,
+            is_sensitive: false,
+        }
+    }
+
+    fn guard_with(f: impl FnOnce(&mut SafetyConfig)) -> SafetyGuard {
+        let mut cfg = SafetyConfig {
+            read_only: false,
+            corner_failsafe: false,
+            hotkey_failsafe: false,
+            allowed_apps: None,
+            confirm: ConfirmMode::Off,
+            ..Default::default()
+        };
+        f(&mut cfg);
+        SafetyGuard::new(cfg)
+    }
+
+    #[test]
+    fn allow_apps_limits_actions_to_listed_processes() {
+        assert_eq!(
+            parse_app_list(" chrome, Notepad.exe ,,code"),
+            vec!["chrome.exe", "notepad.exe", "code.exe"]
+        );
+        let g = guard_with(|c| c.allowed_apps = Some(parse_app_list("chrome,notepad")));
+        assert!(g.check_write_allowed(Some(&win("Notepad.exe"))).is_ok());
+        assert!(g.check_write_allowed(Some(&win("explorer.exe"))).is_err());
+        // unknown target is refused rather than allowed
+        assert!(g.check_write_allowed(None).is_err());
+        // without a list, everything (non-sensitive) is allowed
+        let open = guard_with(|_| {});
+        assert!(open.check_write_allowed(Some(&win("explorer.exe"))).is_ok());
+    }
+
+    #[test]
+    fn rate_limit_caps_bursts_and_minutes() {
+        let g = guard_with(|c| c.max_actions_per_minute = 5);
+        for _ in 0..5 {
+            assert!(g.check_rate_limit().is_ok());
+        }
+        assert!(
+            g.check_rate_limit().is_err(),
+            "6th action within a minute must be blocked"
+        );
+
+        let burst = guard_with(|c| c.max_actions_per_minute = 1000);
+        for _ in 0..10 {
+            assert!(burst.check_rate_limit().is_ok());
+        }
+        assert!(
+            burst.check_rate_limit().is_err(),
+            "11th action within a second must be blocked"
+        );
+
+        let unlimited = guard_with(|c| c.max_actions_per_minute = 0);
+        for _ in 0..50 {
+            assert!(unlimited.check_rate_limit().is_ok());
+        }
+    }
+
+    #[test]
+    fn risky_labels_and_hotkeys() {
+        for l in [
+            "Delete",
+            "Send",
+            "Pay now",
+            "Place order",
+            "Sil",
+            "Göndər",
+            "Удалить",
+            "Empty trash",
+        ] {
+            assert!(is_risky_label(l), "{} should be risky", l);
+        }
+        for l in [
+            "Search",
+            "Settings",
+            "Sender name",
+            "Postcode",
+            "Deleted items",
+            "Silver",
+            "Run Action",
+        ] {
+            assert!(!is_risky_label(l), "{} should not be risky", l);
+        }
+        assert!(is_risky_hotkey(&["shift".into(), "delete".into()]));
+        assert!(!is_risky_hotkey(&["ctrl".into(), "c".into()]));
+        assert_eq!(ConfirmMode::parse("ALL"), Some(ConfirmMode::All));
+        assert_eq!(ConfirmMode::parse("off"), Some(ConfirmMode::Off));
+        // confirm mode Off never shows a dialog
+        assert!(guard_with(|_| {})
+            .confirm_action("click Delete", true)
+            .is_ok());
     }
 
     #[test]

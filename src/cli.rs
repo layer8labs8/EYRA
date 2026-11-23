@@ -44,6 +44,20 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub no_log: bool,
 
+    /// Allow mouse/keyboard actions only in these apps, e.g. --allow-apps chrome.exe,notepad.exe
+    /// (env: EYRA_ALLOW_APPS).
+    #[arg(long, global = true, value_name = "EXE,...")]
+    pub allow_apps: Option<String>,
+
+    /// Maximum input actions per minute; 0 = unlimited (default 60, env: EYRA_MAX_ACTIONS_PER_MIN).
+    #[arg(long, global = true)]
+    pub max_actions_per_minute: Option<u32>,
+
+    /// Ask in a Windows dialog before actions: risky (default: delete, send, pay, publish...),
+    /// all, or off (env: EYRA_CONFIRM).
+    #[arg(long, global = true, value_name = "risky|all|off")]
+    pub confirm: Option<String>,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -347,6 +361,18 @@ pub fn run(cli: Cli) -> Result<()> {
     }
     if cli.allow_sensitive {
         cfg.allow_sensitive = true;
+    }
+    if let Some(apps) = &cli.allow_apps {
+        let list = crate::safety::parse_app_list(apps);
+        cfg.allowed_apps = (!list.is_empty()).then_some(list);
+    }
+    if let Some(n) = cli.max_actions_per_minute {
+        cfg.max_actions_per_minute = n;
+    }
+    if let Some(mode) = &cli.confirm {
+        cfg.confirm = crate::safety::ConfirmMode::parse(mode).ok_or_else(|| {
+            anyhow::anyhow!("--confirm must be risky, all or off (got \"{}\")", mode)
+        })?;
     }
 
     let audit = AuditLogger::new(cli.log_file, cli.no_log);

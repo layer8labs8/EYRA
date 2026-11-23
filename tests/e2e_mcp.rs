@@ -142,6 +142,7 @@ fn mcp_full_eye_and_hand_pipeline_live() {
     let _ = std::fs::remove_file(&log_path);
 
     let mut mcp = Command::new(eyra_bin())
+        .env("EYRA_CONFIRM", "off")
         .args(["--log-file", log_path.to_str().unwrap(), "mcp"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -469,6 +470,7 @@ fn mcp_full_eye_and_hand_pipeline_live() {
 #[test]
 fn mcp_read_only_mode_blocks_hand_tools() {
     let mut mcp = Command::new(eyra_bin())
+        .env("EYRA_CONFIRM", "off")
         .args(["--no-log", "mcp", "--read-only"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

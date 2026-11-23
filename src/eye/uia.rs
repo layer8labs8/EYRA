@@ -574,6 +574,17 @@ unsafe fn read_runtime_id(el: &IUIAutomationElement) -> Vec<i32> {
     result
 }
 
+/// Accessible name of the element under a screen point (for describing coordinate clicks).
+pub fn element_name_at(x: i32, y: i32) -> Option<String> {
+    let ctx = uia_ctx().ok()?;
+    unsafe {
+        let el = ctx.uia.ElementFromPoint(POINT { x, y }).ok()?;
+        let name = el.CurrentName().ok()?.to_string();
+        let name = name.trim().to_string();
+        (!name.is_empty()).then_some(name)
+    }
+}
+
 /// Fast path: hit-test the element's last known center point and walk up a few ancestors.
 /// Costs a handful of round trips instead of a full tree walk (thousands on big web pages).
 fn find_element_near_point(
