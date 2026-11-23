@@ -20,9 +20,38 @@ Set-Location $root
 $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
 Write-Host "EYRA $version"
 
+# Rust embeds absolute source paths (for panic/error messages) in the binary. Remap the
+# machine-specific prefixes so no user name or home folder ends up in a published exe.
+# rustc applies the LAST matching remap, so the generic home folder goes first.
+$cargoHome  = if ($env:CARGO_HOME)  { $env:CARGO_HOME }  else { Join-Path $env:USERPROFILE ".cargo" }
+$rustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $env:USERPROFILE ".rustup" }
+$remap = @(
+  "--remap-path-prefix=$($env:USERPROFILE)=/home",
+  "--remap-path-prefix=$cargoHome=/cargo",
+  "--remap-path-prefix=$rustupHome=/rustup",
+  "--remap-path-prefix=$root=/eyra"
+)
+# CARGO_ENCODED_RUSTFLAGS uses 0x1F as separator, so paths with spaces stay intact
+$env:CARGO_ENCODED_RUSTFLAGS = ($remap -join [char]0x1F)
+
+# Separate target dir: a normal `cargo build/test` (without the remap) can never overwrite
+# the binary this script packages.
+$env:CARGO_TARGET_DIR = Join-Path $root "target\package"
 if (-not $SkipBuild) { cargo build --release; if ($LASTEXITCODE -ne 0) { throw "cargo build failed" } }
-$exe = Join-Path $root "target\release\eyra.exe"
+$exe = Join-Path $env:CARGO_TARGET_DIR "release\eyra.exe"
 if (-not (Test-Path $exe)) { throw "missing $exe" }
+
+# Refuse to package a binary that still carries the builder's user name or home path
+$bytes = [IO.File]::ReadAllBytes($exe)
+$asText = @([Text.Encoding]::ASCII.GetString($bytes), [Text.Encoding]::Unicode.GetString($bytes))
+foreach ($needle in @($env:USERPROFILE, $env:USERNAME) | Where-Object { $_ -and $_.Length -ge 3 }) {
+  foreach ($t in $asText) {
+    if ($t.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+      throw "eyra.exe still contains the local path or user name '$needle'. Build with this script (or in CI), not plain cargo."
+    }
+  }
+}
+Write-Host "Privacy check passed: no local user paths in eyra.exe"
 
 # Keep the manifests' versions in sync with Cargo.toml
 foreach ($m in @("packaging\mcpb\manifest.json", "gemini-extension.json", "claude-plugin\.claude-plugin\plugin.json")) {

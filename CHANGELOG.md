@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.3
+
+### Privacy
+- Release binaries no longer contain the builder's local paths. Rust embeds absolute source
+  paths of dependencies (for error messages); `scripts/package.ps1` now remaps them with
+  `--remap-path-prefix`, builds into its own `target\package` folder, and refuses to package an
+  exe that still contains the local user name or home path.
+
+### License
+- `LICENSE` is now the exact official Apache License 2.0 text (the previous file had altered
+  wording, so GitHub could not detect it).
+
+
 ## 0.3.2
 
 ### Fixes
