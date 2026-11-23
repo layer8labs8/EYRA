@@ -2,6 +2,13 @@
 
 ## 0.3.4
 
+### One-command setup for any AI app
+- `eyra setup <app>` registers EYRA in the MCP config of Google Antigravity, Gemini CLI, Cursor,
+  VS Code, Windsurf or Claude Desktop (and prints the command for Claude Code). It keeps every other
+  server, setting and extra field (such as `env`), writes a timestamped backup first, refuses to
+  rewrite files that aren't plain JSON, and supports `--read-only`, `--remove` and `--dry-run`.
+  `eyra setup --list` shows which apps are installed and whether EYRA is configured.
+
 ### Trusted builds
 - Continuous integration: every push and pull request runs `cargo fmt --check`, `clippy -D warnings`
   and the full test suite on Windows.
