@@ -283,6 +283,9 @@ impl SeeSnapshot {
                 self.mode_used,
                 self.elapsed_ms
             );
+            if self.mode_used.contains("ocr") {
+                out.push_str("NOTE ocr text: password fields are masked heuristically\n");
+            }
         } else {
             let _ = writeln!(
                 out,

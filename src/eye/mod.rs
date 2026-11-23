@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use self::capture::{apply_redactions, capture_screen, capture_window, crop_frame, encode_frame};
 use self::diff::{diff_frames, diff_snapshots};
-use self::ocr::run_ocr;
+use self::ocr::{guard_ocr_passwords, run_ocr};
 use self::som::draw_som_overlay;
 use self::uia::{is_chromium_window, nudge_chromium_accessibility, scan_uia};
 use self::windows::{list_windows, open_popup_menus, resolve_target, CaptureTarget};
@@ -181,8 +181,11 @@ pub fn see(state: &mut AppState, opts: &SeeOptions) -> Result<SeeSnapshot> {
             }
             apply_redactions(&mut frame, &all_redacts);
 
-            if let Ok(ocr_els) = run_ocr(&frame, opts.ocr_lang.as_deref()) {
+            if let Ok(mut ocr_els) = run_ocr(&frame, opts.ocr_lang.as_deref()) {
                 used_ocr = true;
+                // OCR has no notion of password fields: mask likely ones and remember their
+                // rects so screenshots of this window black them out too.
+                redacted_rects.extend(guard_ocr_passwords(&mut ocr_els));
                 if used_uia {
                     merge_ocr_into_uia(&mut elements, ocr_els);
                 } else {
