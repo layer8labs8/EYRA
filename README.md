@@ -93,6 +93,8 @@ EYRA can only see what's on screen. It can't read DOM nodes that aren't rendered
 
 ## Install
 
+> **Note:** `eyra setup` and the build attestations described below ship with the next release (v0.4.0). The current release is v0.3.3; until then, use the one-click packages or the manual JSON setup.
+
 ### One command for any AI app
 
 Download `eyra.exe` (see below), put it somewhere permanent, then let it register itself with your AI app:

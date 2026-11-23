@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.4
+## Unreleased (next: 0.4.0)
 
 ### One-command setup for any AI app
 - `eyra setup <app>` registers EYRA in the MCP config of Google Antigravity, Gemini CLI, Cursor,
