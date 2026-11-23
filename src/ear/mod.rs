@@ -21,6 +21,8 @@ pub struct ListenOptions {
     pub trim_silence: bool,
     pub threshold_db: f32,
     pub out_path: Option<PathBuf>,
+    /// Whether the user allowed microphone capture (see `SafetyConfig::allow_mic`).
+    pub allow_mic: bool,
 }
 
 impl Default for ListenOptions {
@@ -31,6 +33,7 @@ impl Default for ListenOptions {
             trim_silence: true,
             threshold_db: DEFAULT_VAD_THRESHOLD_DB,
             out_path: None,
+            allow_mic: false,
         }
     }
 }
@@ -65,10 +68,41 @@ pub fn default_audio_dir() -> PathBuf {
     std::env::temp_dir().join("eyra").join("audio")
 }
 
+/// Applies the microphone opt-in: `mic` alone is refused, `both` falls back to system audio only
+/// with a note saying so.
+pub fn effective_source(
+    requested: AudioSource,
+    allow_mic: bool,
+) -> Result<(AudioSource, Option<String>)> {
+    match (requested, allow_mic) {
+        (AudioSource::Mic, false) => anyhow::bail!(
+            "Microphone capture is off. Restart eyra with --allow-mic (or set EYRA_ALLOW_MIC=1) to let it record the microphone."
+        ),
+        (AudioSource::Both, false) => Ok((
+            AudioSource::System,
+            Some("microphone skipped: microphone capture is off (start eyra with --allow-mic)".to_string()),
+        )),
+        (s, _) => Ok((s, None)),
+    }
+}
+
+/// Human-readable label for the recording badge.
+pub fn source_label(source: AudioSource) -> &'static str {
+    match source {
+        AudioSource::System => "system audio",
+        AudioSource::Mic => "microphone",
+        AudioSource::Both => "system audio + microphone",
+    }
+}
+
 pub fn listen(opts: &ListenOptions) -> Result<ListenResult> {
     let t0 = Instant::now();
     let duration = opts.seconds.clamp(1.0, 60.0);
-    let captured = capture_audio(opts.source, duration)?;
+    let (source, mic_note) = effective_source(opts.source, opts.allow_mic)?;
+    // Visible while capturing; removed when this function returns
+    let _badge = crate::indicator::RecordingIndicator::show(source_label(source));
+    let mut captured = capture_audio(source, duration)?;
+    captured.warnings.extend(mic_note);
 
     let audio_dir = default_audio_dir();
     let _ = fs::create_dir_all(&audio_dir);
@@ -253,5 +287,26 @@ fn prune_old_wavs(dir: &Path, keep_max: usize) {
     let remove_count = files.len().saturating_sub(keep_max);
     for (p, _) in files.into_iter().take(remove_count) {
         let _ = fs::remove_file(p);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn microphone_needs_opt_in() {
+        assert!(effective_source(AudioSource::Mic, false).is_err());
+        let (src, note) = effective_source(AudioSource::Both, false).unwrap();
+        assert_eq!(src, AudioSource::System);
+        assert!(note.unwrap().contains("--allow-mic"));
+        assert_eq!(
+            effective_source(AudioSource::Both, true).unwrap().0,
+            AudioSource::Both
+        );
+        assert_eq!(
+            effective_source(AudioSource::System, false).unwrap(),
+            (AudioSource::System, None)
+        );
     }
 }

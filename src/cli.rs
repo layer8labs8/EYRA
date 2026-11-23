@@ -53,6 +53,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub max_actions_per_minute: Option<u32>,
 
+    /// Allow microphone capture in listen/watch (off by default, env: EYRA_ALLOW_MIC).
+    #[arg(long, global = true)]
+    pub allow_mic: bool,
+
     /// Ask in a Windows dialog before actions: risky (default: delete, send, pay, publish...),
     /// all, or off (env: EYRA_CONFIRM).
     #[arg(long, global = true, value_name = "risky|all|off")]
@@ -365,6 +369,9 @@ pub fn run(cli: Cli) -> Result<()> {
     if let Some(apps) = &cli.allow_apps {
         let list = crate::safety::parse_app_list(apps);
         cfg.allowed_apps = (!list.is_empty()).then_some(list);
+    }
+    if cli.allow_mic {
+        cfg.allow_mic = true;
     }
     if let Some(n) = cli.max_actions_per_minute {
         cfg.max_actions_per_minute = n;
@@ -952,6 +959,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 trim_silence: !no_trim,
                 threshold_db,
                 out_path: out,
+                allow_mic: state.safety.config.allow_mic,
             };
             match listen(&opts) {
                 Ok(res) => {
