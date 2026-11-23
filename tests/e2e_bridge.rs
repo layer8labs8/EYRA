@@ -76,6 +76,7 @@ fn bridge_enforces_auth_cors_read_only_and_path_safety() {
     let _ = std::fs::remove_file(&log_path);
 
     let child = Command::new(eyra_bin())
+        .env("EYRA_CONFIRM", "off")
         .args([
             "--read-only",
             "--log-file",

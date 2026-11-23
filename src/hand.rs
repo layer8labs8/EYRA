@@ -1,8 +1,9 @@
-use crate::eye::uia::{try_uia_invoke, try_uia_set_value};
+use crate::eye::uia::{element_name_at, try_uia_invoke, try_uia_set_value};
 use crate::eye::windows::{
     get_foreground_window_info, get_window_info_by_hwnd, init_dpi_awareness, resolve_target,
     virtual_screen_rect, CaptureTarget,
 };
+use crate::safety::{is_risky_hotkey, is_risky_label};
 use crate::state::AppState;
 use crate::types::WindowInfo;
 use anyhow::{anyhow, bail, Result};
@@ -135,26 +136,41 @@ impl Default for ClickOptions {
 pub fn click(state: &AppState, opts: &ClickOptions) -> Result<String> {
     init_dpi_awareness();
 
-    let (target_x, target_y, target_win, element_desc, bg_uia_ref) = if let Some(id) = opts.id {
-        let Some((el, hwnd_opt)) = state.find_element(id) else {
-            bail!(
-                "Element #{} not found in last snapshot. Call see() first.",
-                id
-            );
+    let (target_x, target_y, target_win, element_desc, label, bg_uia_ref) =
+        if let Some(id) = opts.id {
+            let Some((el, hwnd_opt)) = state.find_element(id) else {
+                bail!(
+                    "Element #{} not found in last snapshot. Call see() first.",
+                    id
+                );
+            };
+            let win_info = hwnd_opt.and_then(|h| get_window_info_by_hwnd(h, &state.safety));
+            let (cx, cy) = el.rect.center();
+            let desc = format!("#{} {} \"{}\"", el.id, el.role, el.name);
+            let bg_ref = hwnd_opt.map(|h| (h, el.runtime_id.clone()));
+            (cx, cy, win_info, desc, el.name.clone(), bg_ref)
+        } else if let (Some(x), Some(y)) = (opts.x, opts.y) {
+            // The window that will actually receive the click is the one under the point
+            let win_info = match window_at_point(x, y, state) {
+                Some(w) => Some(w),
+                None => resolve_optional_window(state, opts.window.as_deref())?,
+            };
+            let label = element_name_at(x, y).unwrap_or_default();
+            let desc = if label.is_empty() {
+                format!("({},{})", x, y)
+            } else {
+                format!("({},{}) \"{}\"", x, y, label)
+            };
+            (x, y, win_info, desc, label, None)
+        } else {
+            bail!("Provide either element `id` or coordinates (`x`, `y`).");
         };
-        let win_info = hwnd_opt.and_then(|h| get_window_info_by_hwnd(h, &state.safety));
-        let (cx, cy) = el.rect.center();
-        let desc = format!("#{} {} \"{}\"", el.id, el.role, el.name);
-        let bg_ref = hwnd_opt.map(|h| (h, el.runtime_id.clone()));
-        (cx, cy, win_info, desc, bg_ref)
-    } else if let (Some(x), Some(y)) = (opts.x, opts.y) {
-        let win_info = resolve_optional_window(state, opts.window.as_deref())?;
-        (x, y, win_info, format!("({},{})", x, y), None)
-    } else {
-        bail!("Provide either element `id` or coordinates (`x`, `y`).");
-    };
 
     state.safety.check_write_allowed(target_win.as_ref())?;
+    state.safety.confirm_action(
+        &format!("click {}{}", element_desc, in_window(target_win.as_ref())),
+        is_risky_label(&label),
+    )?;
 
     // Try background UIA invocation first (no cursor hijack / no focus steal)
     if opts.background && opts.button == MouseButton::Left && opts.clicks == 1 {
@@ -197,7 +213,8 @@ pub struct TypeOptions {
 pub fn type_text(state: &AppState, opts: &TypeOptions) -> Result<String> {
     init_dpi_awareness();
 
-    let (target_win, click_coords, bg_uia_ref, target_desc) = if let Some(id) = opts.id {
+    let (target_win, click_coords, bg_uia_ref, target_desc, field_name) = if let Some(id) = opts.id
+    {
         let Some((el, hwnd_opt)) = state.find_element(id) else {
             bail!(
                 "Element #{} not found in last snapshot. Call see() first.",
@@ -207,13 +224,39 @@ pub fn type_text(state: &AppState, opts: &TypeOptions) -> Result<String> {
         let win_info = hwnd_opt.and_then(|h| get_window_info_by_hwnd(h, &state.safety));
         let coords = Some(el.rect.center());
         let bg = hwnd_opt.map(|h| (h, el.runtime_id.clone()));
-        (win_info, coords, bg, format!("#{} \"{}\"", el.id, el.name))
+        (
+            win_info,
+            coords,
+            bg,
+            format!("#{} \"{}\"", el.id, el.name),
+            el.name.clone(),
+        )
     } else {
         let win_info = resolve_optional_window(state, opts.window.as_deref())?;
-        (win_info, None, None, "focused element".to_string())
+        (
+            win_info,
+            None,
+            None,
+            "focused element".to_string(),
+            String::new(),
+        )
     };
 
     state.safety.check_write_allowed(target_win.as_ref())?;
+    state.safety.confirm_action(
+        &format!(
+            "type {} characters into {}{}{}",
+            opts.text.chars().count(),
+            target_desc,
+            in_window(target_win.as_ref()),
+            if opts.press_enter {
+                " and press Enter"
+            } else {
+                ""
+            }
+        ),
+        opts.press_enter && is_risky_label(&field_name),
+    )?;
 
     // Background UIA SetValue fast path (when no Enter press needed)
     if opts.background && !opts.press_enter {
@@ -271,6 +314,14 @@ pub fn hotkey(state: &AppState, keys_expr: &str, window: Option<&str>) -> Result
     state
         .safety
         .check_hotkey_allowed(&normalized, target_win.as_ref())?;
+    state.safety.confirm_action(
+        &format!(
+            "press {}{}",
+            normalized.join("+"),
+            in_window(target_win.as_ref())
+        ),
+        is_risky_hotkey(&normalized),
+    )?;
 
     if let Some(win) = &target_win {
         if !win.is_foreground {
@@ -291,7 +342,14 @@ pub fn scroll(
     window: Option<&str>,
 ) -> Result<String> {
     init_dpi_awareness();
-    let target_win = resolve_optional_window(state, window)?;
+    // Scrolling at a point reaches the window under that point
+    let target_win = match (x, y) {
+        (Some(px), Some(py)) => match window_at_point(px, py, state) {
+            Some(w) => Some(w),
+            None => resolve_optional_window(state, window)?,
+        },
+        _ => resolve_optional_window(state, window)?,
+    };
     state.safety.check_write_allowed(target_win.as_ref())?;
 
     if let Some(win) = &target_win {
@@ -353,8 +411,33 @@ pub fn drag(
     window: Option<&str>,
 ) -> Result<String> {
     init_dpi_awareness();
-    let target_win = resolve_optional_window(state, window)?;
+    // Both ends of a drag are checked: start and drop target may be different windows
+    let target_win = match window_at_point(x1, y1, state) {
+        Some(w) => Some(w),
+        None => resolve_optional_window(state, window)?,
+    };
     state.safety.check_write_allowed(target_win.as_ref())?;
+    if let Some(drop_win) = window_at_point(x2, y2, state) {
+        state.safety.check_app_allowed(Some(&drop_win))?;
+        if drop_win.is_sensitive && !state.safety.config.allow_sensitive {
+            bail!(
+                "Action blocked: drop target \"{}\" ({}) is protected as sensitive.",
+                drop_win.title,
+                drop_win.process
+            );
+        }
+    }
+    state.safety.confirm_action(
+        &format!(
+            "drag from ({},{}) to ({},{}){}",
+            x1,
+            y1,
+            x2,
+            y2,
+            in_window(target_win.as_ref())
+        ),
+        false,
+    )?;
 
     if let Some(win) = &target_win {
         if !win.is_foreground {
@@ -381,6 +464,27 @@ pub fn drag(
     // Release left button
     send_inputs(&[mouse_button_input(MOUSEEVENTF_LEFTUP)])?;
     Ok(format!("Dragged from ({},{}) to ({},{})", x1, y1, x2, y2))
+}
+
+/// " in chrome.exe \"Inbox - Gmail\"" for confirmation messages.
+fn in_window(win: Option<&WindowInfo>) -> String {
+    win.map(|w| format!(" in {} \"{}\"", w.process, w.title))
+        .unwrap_or_default()
+}
+
+/// The top-level window under a screen point: the one a click or drop there actually reaches.
+fn window_at_point(x: i32, y: i32, state: &AppState) -> Option<WindowInfo> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, WindowFromPoint, GA_ROOT};
+    unsafe {
+        let hwnd = WindowFromPoint(POINT { x, y });
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let root = GetAncestor(hwnd, GA_ROOT);
+        let h = if root.0.is_null() { hwnd } else { root };
+        get_window_info_by_hwnd(h.0 as usize, &state.safety)
+    }
 }
 
 fn resolve_optional_window(
