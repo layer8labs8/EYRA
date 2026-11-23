@@ -142,6 +142,7 @@ mod tests {
             sensitive_blocked: false,
             elapsed_ms: 0,
             coords: Default::default(),
+            page_not_ready: false,
         }
     }
 

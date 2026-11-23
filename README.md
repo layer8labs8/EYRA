@@ -315,6 +315,8 @@ The confirmation dialog appears on your desktop and the tool call waits for your
 |---|---|
 | `see` says the window is minimized | Restore it first with `focus_window`. |
 | `see` returns nearly nothing for a game, canvas or remote desktop | There is no UIA tree there. Use `mode="ocr"`; `auto` already falls back to OCR below 5 elements. |
+| In a browser, `see` lists only the tabs and toolbar, with `NOTE browser page not rendered yet` | Chrome and Edge don't draw a page whose window is fully covered or still loading. Call `focus_window`, then `see` again. |
+| Text drawn on a `<canvas>` (charts, whiteboards, some editors) is missing | Canvas has no accessibility tree. Use `mode="both"` to add OCR to the page's own elements. |
 | OCR misses your language | Run `eyra ocr-langs`, then install the language's OCR pack in Windows Settings → Time & Language → Language, and pass `ocr_lang`. |
 | Clicks or typing do nothing in an admin window | Windows UIPI blocks input to elevated windows from a non-elevated process. Run eyra elevated, or the target app non-elevated. |
 | Coordinates are off on a multi-monitor or 150% DPI setup | eyra is per-monitor DPI aware and coordinates are physical pixels. Use `#id` clicks rather than hand-computed points. |

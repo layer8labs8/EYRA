@@ -66,6 +66,7 @@ pub fn see(state: &mut AppState, opts: &SeeOptions) -> Result<SeeSnapshot> {
                     sensitive_blocked: true,
                     elapsed_ms: t0.elapsed().as_millis() as u64,
                     coords: opts.coords,
+                    page_not_ready: false,
                 };
                 state.remember_snapshot(snap.clone());
                 return Ok(snap);
@@ -82,6 +83,7 @@ pub fn see(state: &mut AppState, opts: &SeeOptions) -> Result<SeeSnapshot> {
                     sensitive_blocked: false,
                     elapsed_ms: t0.elapsed().as_millis() as u64,
                     coords: opts.coords,
+                    page_not_ready: false,
                 };
                 state.remember_snapshot(snap.clone());
                 return Ok(snap);
@@ -97,6 +99,8 @@ pub fn see(state: &mut AppState, opts: &SeeOptions) -> Result<SeeSnapshot> {
     let mut redacted_rects: Vec<Rect> = Vec::new();
     let mut used_uia = false;
     let mut used_ocr = false;
+    // Set when a Chromium/Electron window still shows no web document after the warm-up
+    let mut chromium_page_missing = false;
 
     // Layer 1: UIA tree
     if opts.mode != SeeMode::Ocr {
@@ -142,6 +146,7 @@ pub fn see(state: &mut AppState, opts: &SeeOptions) -> Result<SeeSnapshot> {
                             break;
                         }
                     }
+                    chromium_page_missing = !has_document(&uia_res.elements);
                 }
             }
             used_uia = true;
@@ -168,7 +173,8 @@ pub fn see(state: &mut AppState, opts: &SeeOptions) -> Result<SeeSnapshot> {
     // Layer 2: WinRT OCR (explicit, hybrid, or automatic fallback when UIA is sparse)
     let need_ocr = match opts.mode {
         SeeMode::Ocr | SeeMode::Both => true,
-        SeeMode::Auto => elements.len() < 5,
+        // A browser whose page tree isn't ready yet only shows its toolbar: read the page by OCR
+        SeeMode::Auto => elements.len() < 5 || chromium_page_missing,
         SeeMode::Uia => false,
     };
 
@@ -233,6 +239,7 @@ pub fn see(state: &mut AppState, opts: &SeeOptions) -> Result<SeeSnapshot> {
         sensitive_blocked: false,
         elapsed_ms: t0.elapsed().as_millis() as u64,
         coords: opts.coords,
+        page_not_ready: chromium_page_missing,
     };
 
     state.remember_snapshot(snap.clone());

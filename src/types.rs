@@ -264,6 +264,10 @@ pub struct SeeSnapshot {
     pub elapsed_ms: u64,
     #[serde(default)]
     pub coords: CoordStyle,
+    /// A Chromium/Electron window showed no web page yet (covered by another window or still
+    /// loading): only the browser frame could be read.
+    #[serde(default)]
+    pub page_not_ready: bool,
 }
 
 impl SeeSnapshot {
@@ -285,6 +289,12 @@ impl SeeSnapshot {
             );
             if self.mode_used.contains("ocr") {
                 out.push_str("NOTE ocr text: password fields are masked heuristically\n");
+            }
+            if self.page_not_ready {
+                out.push_str(
+                    "NOTE browser page not rendered yet (window covered or still loading): \
+                     call focus_window(window), then look again\n",
+                );
             }
         } else {
             let _ = writeln!(
@@ -487,9 +497,39 @@ mod tests {
             sensitive_blocked: false,
             elapsed_ms: 1,
             coords: CoordStyle::Rect,
+            page_not_ready: false,
         };
         let text = snap.to_compact_text();
         assert!(text.contains("WINDOW MINIMIZED"));
         assert!(text.contains("focus_window"));
+    }
+
+    #[test]
+    fn browser_without_page_tells_the_agent_to_focus_it() {
+        let mut snap = SeeSnapshot {
+            window: Some(WindowInfo {
+                hwnd: 0x10,
+                title: "Shop - Google Chrome".into(),
+                process: "chrome.exe".into(),
+                pid: 1,
+                rect: Rect::new(0, 0, 800, 600),
+                is_foreground: false,
+                is_minimized: false,
+                is_sensitive: false,
+            }),
+            screen_rect: Rect::new(0, 0, 800, 600),
+            mode_used: "uia".into(),
+            elements: Vec::new(),
+            redacted_rects: Vec::new(),
+            sensitive_blocked: false,
+            elapsed_ms: 1,
+            coords: CoordStyle::Rect,
+            page_not_ready: true,
+        };
+        assert!(snap
+            .to_compact_text()
+            .contains("NOTE browser page not rendered yet"));
+        snap.page_not_ready = false;
+        assert!(!snap.to_compact_text().contains("browser page"));
     }
 }
