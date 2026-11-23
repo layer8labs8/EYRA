@@ -13,7 +13,10 @@ pub struct SafetyConfig {
     pub allow_sensitive: bool,
     pub corner_failsafe: bool,
     pub hotkey_failsafe: bool,
+    /// Title phrases that mark a sensitive window, matched as whole words.
     pub sensitive_patterns: Vec<String>,
+    /// Executable names (lowercase, exact match) of password managers and credential prompts.
+    pub sensitive_processes: Vec<String>,
 }
 
 impl Default for SafetyConfig {
@@ -26,10 +29,13 @@ impl Default for SafetyConfig {
             corner_failsafe: true,
             hotkey_failsafe: true,
             sensitive_patterns: default_sensitive_patterns(),
+            sensitive_processes: default_sensitive_processes(),
         }
     }
 }
 
+/// Title phrases (whole words) for password managers and Windows credential UI.
+/// Deliberately specific: a plain word such as "keeper" would also match "Goalkeeper".
 pub fn default_sensitive_patterns() -> Vec<String> {
     [
         "1password",
@@ -40,19 +46,90 @@ pub fn default_sensitive_patterns() -> Vec<String> {
         "dashlane",
         "enpass",
         "roboform",
+        "nordpass",
         "proton pass",
-        "authy",
-        "authenticator",
+        "keeper password manager",
+        "keeper vault",
+        "password manager",
         "credential manager",
         "windows security",
         "user account control",
-        "password manager",
-        "nordpass",
-        "keeper",
+        "authy",
+        "authenticator",
     ]
     .iter()
     .map(|s| s.to_string())
     .collect()
+}
+
+/// Executables blocked regardless of their window title.
+pub fn default_sensitive_processes() -> Vec<String> {
+    [
+        "1password.exe",
+        "keepass.exe",
+        "keepassxc.exe",
+        "bitwarden.exe",
+        "lastpass.exe",
+        "dashlane.exe",
+        "enpass.exe",
+        "roboform.exe",
+        "nordpass.exe",
+        "keeperpasswordmanager.exe",
+        "proton pass.exe",
+        "protonpass.exe",
+        "authy desktop.exe",
+        "credentialuibroker.exe",
+        "consent.exe",
+        "sechealthui.exe",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+const BROWSER_PROCESSES: &[&str] = &[
+    "chrome.exe",
+    "msedge.exe",
+    "firefox.exe",
+    "brave.exe",
+    "opera.exe",
+    "vivaldi.exe",
+    "arc.exe",
+];
+
+/// Browser pages that hold saved passwords. In a browser the window title is the active tab's
+/// title, so a title segment equal to one of these marks the window sensitive.
+const BROWSER_VAULT_PAGES: &[&str] = &[
+    "passwords",
+    "saved passwords",
+    "password manager",
+    "google password manager",
+    "passkeys",
+    "wallet",
+    "microsoft wallet",
+];
+
+/// `needle` occurs in `hay` with no letter or digit directly before or after it.
+fn contains_whole_phrase(hay: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    let hay_b = hay.as_bytes();
+    let mut from = 0;
+    while let Some(pos) = hay[from..].find(needle) {
+        let start = from + pos;
+        let end = start + needle.len();
+        let before_ok = start == 0 || !hay_b[start - 1].is_ascii_alphanumeric();
+        let after_ok = end >= hay_b.len() || !hay_b[end].is_ascii_alphanumeric();
+        if before_ok && after_ok {
+            return true;
+        }
+        from = start + 1;
+        while !hay.is_char_boundary(from) {
+            from += 1;
+        }
+    }
+    false
 }
 
 #[derive(Debug)]
@@ -74,12 +151,41 @@ impl SafetyGuard {
     }
 
     pub fn is_sensitive_window(&self, title: &str, process: &str) -> bool {
-        let title_low = title.to_ascii_lowercase();
-        let proc_low = process.to_ascii_lowercase();
-        self.config.sensitive_patterns.iter().any(|pat| {
-            let p = pat.to_ascii_lowercase();
-            title_low.contains(&p) || proc_low.contains(&p)
-        })
+        let title_low = title.to_lowercase();
+        let proc_low = process
+            .rsplit(['\\', '/'])
+            .next()
+            .unwrap_or(process)
+            .to_lowercase();
+
+        // 1. Known password-manager / credential executables, exact name
+        if self
+            .config
+            .sensitive_processes
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case(&proc_low))
+        {
+            return true;
+        }
+        // 2. Title phrases as whole words ("Bitwarden" yes, "Goalkeeper" no)
+        if self
+            .config
+            .sensitive_patterns
+            .iter()
+            .any(|p| contains_whole_phrase(&title_low, &p.to_lowercase()))
+        {
+            return true;
+        }
+        // 3. Password pages inside a browser ("Google Password Manager", "Passwords", "Wallet")
+        if BROWSER_PROCESSES.contains(&proc_low.as_str()) {
+            return title_low
+                .split(" - ")
+                .flat_map(|seg| seg.split(" | "))
+                .flat_map(|seg| seg.split(" \u{2014} "))
+                .map(str::trim)
+                .any(|seg| BROWSER_VAULT_PAGES.contains(&seg));
+        }
+        false
     }
 
     pub fn should_redact_window(&self, win: &WindowInfo) -> bool {
@@ -189,6 +295,47 @@ mod tests {
         assert!(guard.is_sensitive_window("My DB", "KeePassXC.exe"));
         assert!(guard.is_sensitive_window("Windows Security", "CredentialUIBroker.exe"));
         assert!(!guard.is_sensitive_window("GitHub - Google Chrome", "chrome.exe"));
+    }
+
+    #[test]
+    fn process_names_match_exactly_even_with_a_neutral_title() {
+        let guard = SafetyGuard::new(SafetyConfig::default());
+        assert!(guard.is_sensitive_window("Untitled", "1Password.exe"));
+        assert!(guard.is_sensitive_window("", r"C:\\Program Files\\KeePass\\KeePass.exe"));
+        // a process merely containing a manager's name is not blocked
+        assert!(!guard.is_sensitive_window("Notes", "keepassnotes-helper.exe"));
+    }
+
+    #[test]
+    fn title_phrases_need_whole_words() {
+        let guard = SafetyGuard::new(SafetyConfig::default());
+        // previously blocked by the plain substring "keeper"
+        assert!(!guard.is_sensitive_window(
+            "Goalkeeper highlights - YouTube - Google Chrome",
+            "chrome.exe"
+        ));
+        assert!(!guard.is_sensitive_window("Apache ZooKeeper docs", "notepad.exe"));
+        assert!(!guard.is_sensitive_window("MyAuthenticatorApp - Visual Studio", "devenv.exe"));
+        assert!(guard.is_sensitive_window("Keeper Password Manager", "chrome.exe"));
+        assert!(guard.is_sensitive_window("Microsoft Authenticator", "app.exe"));
+    }
+
+    #[test]
+    fn browser_password_pages_are_sensitive() {
+        let guard = SafetyGuard::new(SafetyConfig::default());
+        assert!(guard.is_sensitive_window("Google Password Manager - Google Chrome", "chrome.exe"));
+        assert!(guard.is_sensitive_window("Settings - Passwords - Microsoft Edge", "msedge.exe"));
+        assert!(guard.is_sensitive_window("Wallet - Profile 1 - Microsoft Edge", "msedge.exe"));
+        assert!(guard.is_sensitive_window(
+            "Vaults | Bitwarden Web vault - Mozilla Firefox",
+            "firefox.exe"
+        ));
+        // the same words outside a browser, or as part of a longer page title, are fine
+        assert!(!guard.is_sensitive_window("Passwords - Notepad", "notepad.exe"));
+        assert!(!guard.is_sensitive_window(
+            "How to choose strong passwords - Wikipedia - Google Chrome",
+            "chrome.exe"
+        ));
     }
 
     #[test]
