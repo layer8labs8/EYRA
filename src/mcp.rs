@@ -226,7 +226,7 @@ pub fn tool_definitions(read_only: bool) -> Vec<Value> {
                     "window": { "type": "string" },
                     "timeout_ms": { "type": "integer", "description": "Max wait in ms (default 5000)." },
                     "poll_ms": { "type": "integer", "description": "Poll interval in ms (default 250)." },
-                    "threshold_pct": { "type": "number", "description": "Minimum percent of screen blocks changed (default 1.0)." }
+                    "threshold_pct": { "type": "number", "description": "Minimum percent of 16x16 pixel blocks changed (default 0.2: catches a status line changing, ignores a blinking caret; raise it to wait only for bigger changes)." }
                 }
             }
         }),
@@ -576,7 +576,7 @@ fn dispatch_tool(state: &mut AppState, name: &str, args: &Value) -> Value {
             let threshold_pct = args
                 .get("threshold_pct")
                 .and_then(Value::as_f64)
-                .unwrap_or(1.0) as f32;
+                .unwrap_or(0.2) as f32;
             match wait_change(state, window.as_deref(), timeout_ms, poll_ms, threshold_pct) {
                 Ok(r) => {
                     let rect_str = r

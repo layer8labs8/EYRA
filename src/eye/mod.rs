@@ -464,6 +464,9 @@ pub struct WaitChangeResult {
     pub elapsed_ms: u64,
 }
 
+/// Fewest changed 16x16 blocks that count as a change in `wait_change`.
+const WAIT_CHANGE_MIN_BLOCKS: usize = 3;
+
 pub fn wait_change(
     state: &mut AppState,
     window: Option<&str>,
@@ -499,7 +502,8 @@ pub fn wait_change(
         thread::sleep(poll_dur);
         let curr = capture_target_frame(win_info.as_ref(), clip_rect)?;
         let pd = diff_frames(&baseline, &curr, 18);
-        if pd.changed_percent >= threshold_pct {
+        // A blinking caret or a hover highlight touches 1-2 blocks; real content changes more
+        if pd.changed_percent >= threshold_pct && pd.changed_blocks >= WAIT_CHANGE_MIN_BLOCKS {
             state.last_frame = Some(curr);
             return Ok(WaitChangeResult {
                 changed: true,

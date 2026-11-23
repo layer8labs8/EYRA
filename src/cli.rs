@@ -225,7 +225,9 @@ pub enum Command {
         timeout_ms: u64,
         #[arg(long, default_value_t = 250)]
         poll_ms: u64,
-        #[arg(long, default_value_t = 1.0)]
+        /// Percent of 16x16 pixel blocks that must change (default 0.2: catches a status line
+        /// changing, ignores a blinking caret).
+        #[arg(long, default_value_t = 0.2)]
         threshold: f32,
     },
 
