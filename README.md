@@ -93,6 +93,17 @@ EYRA can only see what's on screen. It can't read DOM nodes that aren't rendered
 
 ## Install
 
+### One command for any AI app
+
+Download `eyra.exe` (see below), put it somewhere permanent, then let it register itself with your AI app:
+
+```powershell
+eyra setup antigravity      # or: gemini-cli, cursor, vscode, windsurf, claude-desktop
+eyra setup --list           # which apps are installed and whether EYRA is configured
+```
+
+`setup` keeps every other server and setting in the app's config file, writes a backup next to it first, and never rewrites a file that isn't plain JSON (it prints the snippet to add by hand instead). Add `--read-only` for look-and-listen only, `--remove` to take EYRA out again, or `--dry-run` to preview. Restart the app afterwards.
+
 ### One-click install
 
 | Agent | How |
@@ -143,15 +154,18 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 
 ### Connect it to an agent
 
-EYRA speaks standard MCP over stdio, so the setup is the same everywhere: point the host at `eyra.exe mcp`.
+EYRA speaks standard MCP over stdio, so the setup is the same everywhere: point the host at `eyra.exe mcp`. `eyra setup <app>` does this for you; to do it by hand:
 
-| Host | Where to add it |
-|---|---|
-| **Gemini – Antigravity** | MCP servers → *Manage* → *View raw config* (`mcp_config.json`), add the JSON below |
-| **Gemini CLI** | `gemini extensions install https://github.com/layer8labs8/EYRA`, or `%USERPROFILE%\.gemini\settings.json` with the JSON below |
-| **Claude Code** | `claude mcp add eyra -- C:\path\to\eyra.exe mcp` |
-| **Claude Desktop** | open the `.mcpb` from the release, or `claude_desktop_config.json` with the JSON below |
-| **Cursor / VS Code / others** | the host's MCP config file, add the JSON below |
+| Host | `eyra setup` | Config file it edits |
+|---|---|---|
+| **Google Antigravity** | `eyra setup antigravity` | `%USERPROFILE%\.gemini\config\mcp_config.json` |
+| **Gemini CLI** | `eyra setup gemini-cli` (or `gemini extensions install https://github.com/layer8labs8/EYRA`) | `%USERPROFILE%\.gemini\settings.json` |
+| **Cursor** | `eyra setup cursor` | `%USERPROFILE%\.cursor\mcp.json` |
+| **VS Code** | `eyra setup vscode` | `%APPDATA%\Code\User\mcp.json` (uses `servers` and `"type": "stdio"`) |
+| **Windsurf** | `eyra setup windsurf` (edits an existing config only) | `%USERPROFILE%\.codeium\windsurf\mcp_config.json` |
+| **Claude Desktop** | `eyra setup claude-desktop` (or open the `.mcpb`) | `claude_desktop_config.json` (the Microsoft Store build's copy under `%LOCALAPPDATA%\Packages\Claude_*` when present) |
+| **Claude Code** | `/plugin install eyra --marketplace layer8labs8/EYRA` | `claude mcp add eyra -- C:\path\to\eyra.exe mcp` |
+| **Any other MCP host** | | the host's MCP config file, with the JSON below |
 
 See [`mcp-config.example.json`](mcp-config.example.json):
 
@@ -231,6 +245,7 @@ eyra watch --window Chrome --duration 60
 eyra ocr-langs
 eyra logs --tail 25
 eyra bench --window Chrome
+eyra setup --list
 eyra serve --port 47821    # optional 127.0.0.1 HTTP bridge (token-authenticated)
 ```
 

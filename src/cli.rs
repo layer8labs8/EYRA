@@ -284,9 +284,61 @@ pub enum Command {
         #[arg(short, long)]
         window: Option<String>,
     },
+
+    /// Add EYRA to an AI app's MCP config: antigravity, gemini-cli, cursor, vscode, windsurf,
+    /// claude-desktop, claude-code. Run without an app (or with --list) to see what's installed.
+    Setup {
+        /// App to configure.
+        app: Option<String>,
+        /// Show every supported app and whether EYRA is configured in it.
+        #[arg(long)]
+        list: bool,
+        /// Remove EYRA from the app's config instead of adding it.
+        #[arg(long)]
+        remove: bool,
+        /// Show what would change without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Path to eyra.exe to register (default: this executable).
+        #[arg(long)]
+        exe: Option<std::path::PathBuf>,
+    },
 }
 
 pub fn run(cli: Cli) -> Result<()> {
+    if let Command::Setup {
+        app,
+        list,
+        remove,
+        dry_run,
+        exe,
+    } = &cli.command
+    {
+        let Some(app) = app.as_deref().filter(|_| !*list) else {
+            print!("{}", crate::setup::list_text());
+            return Ok(());
+        };
+        let host = crate::setup::Host::parse(app).ok_or_else(|| {
+            anyhow::anyhow!(
+                "unknown app \"{}\". Supported: {}",
+                app,
+                crate::setup::ALL_HOSTS
+                    .iter()
+                    .map(|h| h.id())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
+        let opts = crate::setup::SetupOptions {
+            read_only: cli.read_only,
+            remove: *remove,
+            dry_run: *dry_run,
+            exe: exe.clone(),
+        };
+        print!("{}", crate::setup::run_setup(host, &opts)?);
+        return Ok(());
+    }
+
     init_dpi_awareness();
     let mut cfg = SafetyConfig::default();
     if cli.read_only {
@@ -322,7 +374,7 @@ pub fn run(cli: Cli) -> Result<()> {
     let t0 = Instant::now();
 
     match cli.command {
-        Command::Mcp | Command::Serve { .. } => unreachable!(),
+        Command::Mcp | Command::Serve { .. } | Command::Setup { .. } => unreachable!(),
         Command::Logs { tail, json, clear } => {
             if clear {
                 state.audit.clear()?;

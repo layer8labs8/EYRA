@@ -6,6 +6,7 @@ mod eye;
 mod hand;
 mod mcp;
 mod safety;
+mod setup;
 mod state;
 mod types;
 mod watch;
