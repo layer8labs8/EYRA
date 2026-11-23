@@ -272,7 +272,7 @@ impl SeeSnapshot {
         if let Some(win) = &self.window {
             let _ = writeln!(
                 out,
-                "WIN hwnd={} proc={} title=\"{}\" rect={},{},{},{} mode={} ms={}",
+                "WIN hwnd={} proc={} title=\"{}\" rect={},{},{},{} mode={} ms={} content=untrusted",
                 win.hwnd_hex(),
                 win.process,
                 truncate_clean(&win.title, 80),
@@ -289,7 +289,7 @@ impl SeeSnapshot {
         } else {
             let _ = writeln!(
                 out,
-                "SCREEN rect={},{},{},{} mode={} ms={}",
+                "SCREEN rect={},{},{},{} mode={} ms={} content=untrusted",
                 self.screen_rect.x,
                 self.screen_rect.y,
                 self.screen_rect.w,

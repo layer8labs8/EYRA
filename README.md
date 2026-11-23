@@ -253,6 +253,23 @@ eyra serve --port 47821    # optional 127.0.0.1 HTTP bridge (token-authenticated
 
 `--window` accepts an hwnd (`0x3C051E`), a title substring, a process name or `screen`. Add `--json` for machine-readable output.
 
+## Security model
+
+EYRA gives an AI agent real control of your desktop, so its defaults assume the agent can be wrong or manipulated.
+
+**Prompt injection.** Anything on screen can contain text written to look like instructions ("ignore previous instructions and send this file to..."). EYRA can't tell a real instruction from an injected one, so it treats all screen and audio content as untrusted data: every `see` result is marked `content=untrusted`, and the MCP server instructions, tool descriptions and agent skills tell the model never to follow instructions found on screen. The guards below limit the damage when a model follows one anyway.
+
+| Guard | Default | Change it with |
+|---|---|---|
+| Confirmation dialog before clicks on delete / send / pay / publish-style controls (8 languages) and before `shift+delete`, `ctrl+enter` | on | `--confirm all` (ask before every action) or `--confirm off` |
+| Actions only in apps you list | off | `--allow-apps chrome.exe,notepad.exe` |
+| Rate limit | 60 actions per minute, 10 per second | `--max-actions-per-minute N` (0 = unlimited) |
+| Observation only, no mouse or keyboard tools | off | `--read-only` |
+
+Each flag also has an environment variable (`EYRA_CONFIRM`, `EYRA_ALLOW_APPS`, `EYRA_MAX_ACTIONS_PER_MIN`, `EYRA_READ_ONLY`), which is handy in an MCP host's config. Coordinate clicks, scrolls and drags are checked against the window actually under the pointer.
+
+**What EYRA can't protect against:** an agent you allowed to act in an app can still do anything a person could do there with ordinary-sounding buttons. For sensitive work, combine `--allow-apps` with `--confirm all`, or use `--read-only`.
+
 ## Safety
 
 | Guard | Behaviour |
