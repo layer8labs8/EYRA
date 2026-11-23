@@ -1,6 +1,6 @@
 [package]
 name = "eyra"
-version = "0.3.4"
+version = "0.4.0"
 edition = "2021"
 description = "EYRA (Eye + Ear + Action): Single-binary Windows OS-level vision, audio capture, watch-together timeline, and input automation MCP server & CLI in pure Rust."
 license = "Apache-2.0"

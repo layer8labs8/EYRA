@@ -1,7 +1,7 @@
 {
   "name": "eyra",
   "displayName": "EYRA",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Eye + Ear + Action for Windows: see any app as compact text (UI Automation + OCR), hear system audio and the mic, and control mouse and keyboard.",
   "author": {
     "name": "layer8labs8",
@@ -19,7 +19,7 @@
     "accessibility",
     "audio"
   ],
-  "mcpServers": "https://github.com/layer8labs8/EYRA/releases/download/v0.3.3/eyra-0.3.3.mcpb",
+  "mcpServers": "https://github.com/layer8labs8/EYRA/releases/download/v0.4.0/eyra-0.4.0.mcpb",
   "network": {
     "hosts": []
   }

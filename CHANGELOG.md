@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (next: 0.4.0)
+## 0.4.0
 
 ### Benchmark and fixes it found
 - `bench/run-tasks.ps1`: five scripted desktop tasks (Notepad typing and menus, a WinForms form,

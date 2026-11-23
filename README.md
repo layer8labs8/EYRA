@@ -90,7 +90,8 @@ Five scripted desktop tasks, 5 runs each (Windows 10, 1366x768). The steps are s
 | Find three files in a File Explorer folder | 5/5 | 1 | 891 | 561 | 1.4 s |
 | Wait for a status label to change and read it | 5/5 | 3 | 138 | 276 | 2.3 s |
 
-All 25 runs succeeded. List-heavy windows such as File Explorer cost more than a screenshot on the first look (the navigation pane and ribbon are listed too); the savings come from the steps after it. Reproduce with `powershell -ExecutionPolicy Bypass -File benchun-tasks.ps1`.
+All 25 runs succeeded. List-heavy windows such as File Explorer cost more than a screenshot on the first look (the navigation pane and ribbon are listed too); the savings come from the steps after it. Reproduce with `powershell -ExecutionPolicy Bypass -File bench
+un-tasks.ps1`.
 
 ## When to use EYRA (and when not)
 
@@ -106,8 +107,6 @@ All 25 runs succeeded. List-heavy windows such as File Explorer cost more than a
 EYRA can only see what's on screen. It can't read DOM nodes that aren't rendered, network traffic or a page's JavaScript state.
 
 ## Install
-
-> **Note:** `eyra setup` and the build attestations described below ship with the next release (v0.4.0). The current release is v0.3.3; until then, use the one-click packages or the manual JSON setup.
 
 ### One command for any AI app
 
